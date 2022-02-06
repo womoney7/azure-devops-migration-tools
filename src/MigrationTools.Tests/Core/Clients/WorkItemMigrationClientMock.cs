@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using MigrationTools._EngineV1.Clients;
-using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.DataContracts;
 using MigrationTools.DataContracts;
 
@@ -10,8 +9,6 @@ namespace MigrationTools.Clients.Tests
     internal class WorkItemMigrationClientMock : IWorkItemMigrationClient
     {
         private List<WorkItemData> list = new List<WorkItemData>();
-
-        public IMigrationClientConfig Config => throw new System.NotImplementedException();
 
         public ProjectData Project => throw new System.NotImplementedException();
 

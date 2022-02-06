@@ -4,6 +4,7 @@ namespace MigrationTools.Tests
 {
     public class FakeMigrationClientConfig : IMigrationClientConfig
     {
+        public string Project { get { return "FakeProject"; } }
         public IMigrationClientConfig PopulateWithDefault()
         {
             return this;

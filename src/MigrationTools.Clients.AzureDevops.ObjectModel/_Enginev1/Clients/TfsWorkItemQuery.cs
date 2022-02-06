@@ -18,7 +18,7 @@ namespace MigrationTools._EngineV1.Clients
         public override List<WorkItemData> GetWorkItems()
         {
             Log.Debug("WorkItemQuery: ===========GetWorkItems=============");
-            var wiClient = (TfsWorkItemMigrationClient)MigrationClient.WorkItems;
+            var wiClient = (TfsWorkItemMigrationClient)MigrationClient;
             Telemetry.TrackEvent("WorkItemQuery.Execute", Parameters, null);
             Log.Debug("WorkItemQuery: TeamProjectCollection: {QueryTarget}", wiClient.Store.TeamProjectCollection.Uri.ToString());
             Log.Debug("WorkItemQuery: Query: {QueryText}", Query);
@@ -53,12 +53,12 @@ namespace MigrationTools._EngineV1.Clients
                     }
                 }
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemsFromQuery", null, startTime, timer.Elapsed, "200", true));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", wiClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemsFromQuery", null, startTime, timer.Elapsed, "200", true));
             }
             catch (Exception ex)
             {
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemsFromQuery", null, startTime, timer.Elapsed, "500", false));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", wiClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemsFromQuery", null, startTime, timer.Elapsed, "500", false));
                 Telemetry.TrackException(ex,
                        new Dictionary<string, string> {
                             { "CollectionUrl", wiClient.Store.TeamProjectCollection.Uri.ToString() }

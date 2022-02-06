@@ -145,17 +145,17 @@ namespace MigrationTools.Enrichers
                 IMigrationEngine engine = Services.GetRequiredService<IMigrationEngine>();
                 if (_sourceCommonStructureService is null)
                 {
-                    _sourceCommonStructureService = (ICommonStructureService4)engine.Source.GetService<ICommonStructureService4>();
-                    _sourceProjectInfo = _sourceCommonStructureService.GetProjectFromName(engine.Source.Config.AsTeamProjectConfig().Project);
+                    _sourceCommonStructureService = engine.Source.GetService<ICommonStructureService4>();
+                    _sourceProjectInfo = _sourceCommonStructureService.GetProjectFromName(engine.Source.Config.Project);
                     _sourceRootNodes = _sourceCommonStructureService.ListStructures(_sourceProjectInfo.Uri);
                     _sourceLanguageMaps = engine.Source.Config.AsTeamProjectConfig().LanguageMaps;
-                    _sourceProjectName = engine.Source.Config.AsTeamProjectConfig().Project;
+                    _sourceProjectName = engine.Source.Config.Project;
                 }
                 if (_targetCommonStructureService is null)
                 {
-                    _targetCommonStructureService = (ICommonStructureService4)engine.Target.GetService<ICommonStructureService4>();
+                    _targetCommonStructureService = engine.Target.GetService<ICommonStructureService4>();
                     _targetLanguageMaps = engine.Target.Config.AsTeamProjectConfig().LanguageMaps;
-                    _targetProjectName = engine.Target.Config.AsTeamProjectConfig().Project;
+                    _targetProjectName = engine.Target.Config.Project;
                 }
             }
             else
@@ -163,7 +163,7 @@ namespace MigrationTools.Enrichers
                 if (_sourceCommonStructureService is null)
                 {
                     var source = (TfsWorkItemEndpoint)processor.Source;
-                    _sourceCommonStructureService = (ICommonStructureService4)source.TfsCollection.GetService<ICommonStructureService>();
+                    _sourceCommonStructureService = source.TfsCollection.GetService<ICommonStructureService4>();
                     _sourceProjectInfo = _sourceCommonStructureService.GetProjectFromName(source.Project);
                     _sourceRootNodes = _sourceCommonStructureService.ListStructures(_sourceProjectInfo.Uri);
                     _sourceLanguageMaps = source.Options.LanguageMaps;
@@ -172,7 +172,7 @@ namespace MigrationTools.Enrichers
                 if (_targetCommonStructureService is null)
                 {
                     var target = (TfsWorkItemEndpoint)processor.Target;
-                    _targetCommonStructureService = (ICommonStructureService4)target.TfsCollection.GetService<ICommonStructureService4>();
+                    _targetCommonStructureService = target.TfsCollection.GetService<ICommonStructureService4>();
                     _targetLanguageMaps = target.Options.LanguageMaps;
                     _targetProjectName = target.Project;
                 }

@@ -23,7 +23,7 @@ namespace VstsSyncMigrator.Engine.ComponentContext
             this.testPlanQueryBit = testPlanQueryBit;
             _source = source;
             tms = _source.GetService<ITestManagementService>();
-            Project = tms.GetTeamProject(source.Config.AsTeamProjectConfig().Project);
+            Project = tms.GetTeamProject(source.Config.Project);
         }
 
         internal ITestPlanCollection GetTestPlans()

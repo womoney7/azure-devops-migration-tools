@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using MigrationTools.Endpoints;
+﻿using MigrationTools.Endpoints;
 
 namespace MigrationTools._EngineV1.Clients
 {
@@ -9,6 +8,6 @@ namespace MigrationTools._EngineV1.Clients
 
         void AddParameter(string name, string value);
 
-        IWorkItemQuery BuildWIQLQuery(IMigrationClient migrationClient);
+        IWorkItemQuery BuildWIQLQuery(IWorkItemMigrationClient workItemMigrationClient);
     }
 }

@@ -31,7 +31,7 @@ namespace MigrationTools.Enrichers
                     return CreateFromGit(gitExternalLink, possibleRepos);
 
                 case RepistoryType.TFVC:
-                    return CreateFromTFVC(gitExternalLink, possibleRepos, migrationEngine.ChangeSetMapps.Items, migrationEngine.Source.Config.AsTeamProjectConfig().Project, workItemSourceProjectName);
+                    return CreateFromTFVC(gitExternalLink, possibleRepos, migrationEngine.ChangeSetMapps.Items, migrationEngine.Source.Config.Project, workItemSourceProjectName);
             }
 
             return null;

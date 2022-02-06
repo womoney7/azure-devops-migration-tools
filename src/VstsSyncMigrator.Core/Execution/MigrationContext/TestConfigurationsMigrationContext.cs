@@ -50,7 +50,7 @@ namespace VstsSyncMigrator.Engine
                 {
                     Log.LogDebug("{sourceTestConfName} - Create new", sourceTestConf.Name);
                     targetTc = targetTmc.Project.TestConfigurations.Create();
-                    targetTc.AreaPath = sourceTestConf.AreaPath.Replace(Engine.Source.Config.AsTeamProjectConfig().Project, Engine.Target.Config.AsTeamProjectConfig().Project);
+                    targetTc.AreaPath = sourceTestConf.AreaPath.Replace(Engine.Source.Config.Project, Engine.Target.Config.Project);
                     targetTc.Description = sourceTestConf.Description;
                     targetTc.IsDefault = sourceTestConf.IsDefault;
                     targetTc.Name = sourceTestConf.Name;

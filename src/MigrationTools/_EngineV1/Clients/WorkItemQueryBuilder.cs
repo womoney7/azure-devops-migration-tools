@@ -9,10 +9,9 @@ namespace MigrationTools._EngineV1.Clients
     public class WorkItemQueryBuilder : IWorkItemQueryBuilder
     {
         internal Dictionary<string, string> _parameters;
-        internal string _Query;
         private readonly IServiceProvider _Services;
 
-        public string Query { get => _Query; set => _Query = value; }
+        public string Query { get; set; }
 
         public WorkItemQueryBuilder(IServiceProvider services)
         {
@@ -29,7 +28,7 @@ namespace MigrationTools._EngineV1.Clients
             _parameters.Add(name, value);
         }
 
-        public IWorkItemQuery BuildWIQLQuery(IMigrationClient migrationClient)
+        public IWorkItemQuery BuildWIQLQuery(IWorkItemMigrationClient workItemMigrationClient)
         {
             if (string.IsNullOrEmpty(Query))
             {
@@ -38,7 +37,7 @@ namespace MigrationTools._EngineV1.Clients
             Query = WorkAroundForSOAPError(Query); // TODO: Remove this once bug fixed... https://dev.azure.com/nkdagility/migration-tools/_workitems/edit/5066
 
             IWorkItemQuery wiq = _Services.GetRequiredService<IWorkItemQuery>();
-            wiq.Configure(migrationClient, _Query, _parameters);
+            wiq.Configure(workItemMigrationClient, Query, _parameters);
             return wiq;
         }
 

@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.DataContracts;
 using MigrationTools.DataContracts;
 
@@ -7,7 +6,6 @@ namespace MigrationTools._EngineV1.Clients
 {
     public interface IWorkItemMigrationClient
     {
-        IMigrationClientConfig Config { get; }
         ProjectData Project { get; }
 
         void Configure(IMigrationClient migrationClient, bool bypassRules = true);

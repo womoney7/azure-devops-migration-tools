@@ -110,7 +110,7 @@ namespace VstsSyncMigrator.Engine
             var sourceWorkItems = Engine.Source.WorkItems.GetWorkItems(sourceQuery);
             contextLog.Information("Replay all revisions of {sourceWorkItemsCount} work items?", sourceWorkItems.Count);
             //////////////////////////////////////////////////
-            contextLog.Information("Found target project as {@destProject}", Engine.Target.WorkItems.Project.Name);
+            contextLog.Information("Found target project as {@destProject}", Engine.Target.Config.Project);
             //////////////////////////////////////////////////////////FilterCompletedByQuery
             if (_config.FilterWorkItemsThatAlreadyExistInTarget)
             {
@@ -308,9 +308,9 @@ namespace VstsSyncMigrator.Engine
             var startTime = DateTime.Now;
             processWorkItemMetrics = new Dictionary<string, double>();
             processWorkItemParamiters = new Dictionary<string, string>();
-            AddParameter("SourceURL", processWorkItemParamiters, Engine.Source.WorkItems.Config.AsTeamProjectConfig().Collection.ToString());
+            AddParameter("SourceURL", processWorkItemParamiters, Engine.Source.Config.AsTeamProjectConfig().Collection.ToString());
             AddParameter("SourceWorkItem", processWorkItemParamiters, sourceWorkItem.Id);
-            AddParameter("TargetURL", processWorkItemParamiters, Engine.Target.WorkItems.Config.AsTeamProjectConfig().Collection.ToString());
+            AddParameter("TargetURL", processWorkItemParamiters, Engine.Target.Config.AsTeamProjectConfig().Collection.ToString());
             AddParameter("TargetProject", processWorkItemParamiters, Engine.Target.WorkItems.Project.Name);
             AddParameter("RetryLimit", processWorkItemParamiters, retryLimit.ToString());
             AddParameter("RetryNumber", processWorkItemParamiters, retries.ToString());

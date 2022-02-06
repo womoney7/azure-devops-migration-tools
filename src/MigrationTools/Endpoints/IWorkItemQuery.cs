@@ -8,7 +8,7 @@ namespace MigrationTools.Endpoints
     {
         string Query { get; }
 
-        void Configure(IMigrationClient migrationClient, string query, Dictionary<string, string> parameters);
+        void Configure(IWorkItemMigrationClient workItemMigrationClient, string query, Dictionary<string, string> parameters);
 
         List<WorkItemData> GetWorkItems();
     }

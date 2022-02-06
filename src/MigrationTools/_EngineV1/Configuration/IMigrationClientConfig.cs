@@ -5,5 +5,7 @@
         IMigrationClientConfig PopulateWithDefault();
 
         string ToString();
+
+        public string Project { get; }
     }
 }

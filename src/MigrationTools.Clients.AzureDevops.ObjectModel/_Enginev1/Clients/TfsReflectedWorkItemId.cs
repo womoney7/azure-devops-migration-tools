@@ -7,36 +7,39 @@ namespace MigrationTools._EngineV1.Clients
 {
     public class TfsReflectedWorkItemId : ReflectedWorkItemId
     {
-        private Uri _Connection;
-        private string _ProjectName;
-        private string _WorkItemId;
+        private Uri _connection;
+        private string _projectName;
+        private string _workItemId;
         private static readonly Regex ReflectedIdRegex = new Regex(@"^(?<org>[\S ]+)\/(?<project>[\S ]+)\/_workitems\/edit\/(?<id>\d+)", RegexOptions.Compiled);
 
-        public TfsReflectedWorkItemId(WorkItemData workItem) : base(workItem)
+        public TfsReflectedWorkItemId(WorkItemData workItem)
+            : base(workItem)
         {
             if (workItem is null)
             {
                 throw new ArgumentNullException(nameof(workItem));
             }
 
-            _WorkItemId = workItem.Id;
-            _ProjectName = workItem.ProjectName;
-            _Connection = workItem.ToWorkItem().Store.TeamProjectCollection.Uri;
+            _workItemId = workItem.Id;
+            _projectName = workItem.ProjectName;
+            _connection = workItem.ToWorkItem().Store.TeamProjectCollection.Uri;
         }
 
-        public TfsReflectedWorkItemId(int workItemId, string tfsProject, Uri tfsTeamProjectCollection) : base(workItemId)
+        public TfsReflectedWorkItemId(int workItemId, string tfsProject, Uri tfsTeamProjectCollection)
+            : base(workItemId)
         {
             if (workItemId == 0)
             {
                 throw new ArgumentNullException(nameof(workItemId));
             }
 
-            _WorkItemId = workItemId.ToString();
-            _ProjectName = tfsProject;
-            _Connection = tfsTeamProjectCollection;
+            _workItemId = workItemId.ToString();
+            _projectName = tfsProject;
+            _connection = tfsTeamProjectCollection;
         }
 
-        public TfsReflectedWorkItemId(string ReflectedWorkItemId) : base(ReflectedWorkItemId)
+        public TfsReflectedWorkItemId(string ReflectedWorkItemId)
+            : base(ReflectedWorkItemId)
         {
             if (ReflectedWorkItemId is null)
             {
@@ -47,32 +50,32 @@ namespace MigrationTools._EngineV1.Clients
             if (match.Success)
             {
                 Log.Verbose("TfsReflectedWorkItemId: Match Sucess from {ReflectedWorkItemId}: {@ReflectedWorkItemIdObject}", ReflectedWorkItemId, this);
-                _Connection = new Uri(match.Groups[1].Value);
-                _ProjectName = match.Groups[2].Value;
-                _WorkItemId = match.Groups[3].Value;
+                _connection = new Uri(match.Groups[1].Value);
+                _projectName = match.Groups[2].Value;
+                _workItemId = match.Groups[3].Value;
             }
             else
             {
                 Log.Error("TfsReflectedWorkItemId: Unable to match ReflectedWorkItemId({ReflectedWorkItemId}) as id! ", ReflectedWorkItemId);
-                throw new Exception("Unable to Parse ReflectedWorkItemId. Check Log...");
+                throw new ArgumentException("Unable to Parse ReflectedWorkItemId. Check Log...");
             }
         }
 
         public override string ToString()
         {
-            if (_Connection is null)
+            if (_connection is null)
             {
-                throw new ArgumentNullException(nameof(_Connection));
+                throw new ArgumentNullException(nameof(_connection));
             }
-            if (_ProjectName is null)
+            if (_projectName is null)
             {
-                throw new ArgumentNullException(nameof(_ProjectName));
+                throw new ArgumentNullException(nameof(_projectName));
             }
-            if (_WorkItemId is null)
+            if (_workItemId is null)
             {
-                throw new ArgumentNullException(nameof(_WorkItemId));
+                throw new ArgumentNullException(nameof(_workItemId));
             }
-            return string.Format("{0}/{1}/_workitems/edit/{2}", _Connection.ToString().TrimEnd('/'), _ProjectName, _WorkItemId);
+            return string.Format("{0}/{1}/_workitems/edit/{2}", _connection.ToString().TrimEnd('/'), _projectName, _workItemId);
         }
     }
 }

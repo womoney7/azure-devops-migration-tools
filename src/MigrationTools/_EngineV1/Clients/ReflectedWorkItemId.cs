@@ -15,22 +15,22 @@ namespace MigrationTools._EngineV1.Clients
             WorkItemId = workItem.Id;
         }
 
-        public ReflectedWorkItemId(string ReflectedWorkItemId)
+        public ReflectedWorkItemId(string reflectedWorkItemId)
         {
-            if (ReflectedWorkItemId is null)
+            if (reflectedWorkItemId is null)
             {
-                throw new ArgumentNullException(nameof(ReflectedWorkItemId));
+                throw new ArgumentNullException(nameof(reflectedWorkItemId));
             }
-            WorkItemId = ReflectedWorkItemId;
+            WorkItemId = reflectedWorkItemId;
         }
 
-        public ReflectedWorkItemId(int ReflectedWorkItemId)
+        public ReflectedWorkItemId(int reflectedWorkItemId)
         {
-            if (ReflectedWorkItemId == 0)
+            if (reflectedWorkItemId == 0)
             {
-                throw new ArgumentNullException(nameof(ReflectedWorkItemId));
+                throw new ArgumentNullException(nameof(reflectedWorkItemId));
             }
-            WorkItemId = ReflectedWorkItemId.ToString();
+            WorkItemId = reflectedWorkItemId.ToString();
         }
 
         public override string ToString()

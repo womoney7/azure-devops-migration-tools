@@ -12,7 +12,7 @@ namespace MigrationTools.Endpoints
 
         public string Query { get => _query; }
 
-        public void Configure(IMigrationClient migrationClient, string query, Dictionary<string, string> parameters)
+        public void Configure(IWorkItemMigrationClient migrationClient, string query, Dictionary<string, string> parameters)
         {
             if (string.IsNullOrEmpty(query))
             {

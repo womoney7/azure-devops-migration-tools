@@ -3,31 +3,33 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Microsoft.ApplicationInsights.DataContracts;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.TeamFoundation.WorkItemTracking.Client;
 using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.DataContracts;
 using MigrationTools.DataContracts;
-using Serilog;
 
 namespace MigrationTools._EngineV1.Clients
 {
     public class TfsWorkItemMigrationClient : WorkItemMigrationClientBase
     {
         private readonly IWorkItemQueryBuilderFactory _workItemQueryBuilderFactory;
+        private readonly ILogger<TfsWorkItemMigrationClient> _logger;
         private WorkItemStoreFlags _bypassRules;
-        private IMigrationClientConfig _config;
+
         private ProjectData _project;
         private WorkItemStore _wistore;
 
-        public TfsWorkItemMigrationClient(IWorkItemQueryBuilderFactory workItemQueryBuilderFactory, ITelemetryLogger telemetry)
+        public TfsWorkItemMigrationClient(IWorkItemQueryBuilderFactory workItemQueryBuilderFactory, ITelemetryLogger telemetry, ILogger<TfsWorkItemMigrationClient> logger)
             : base(telemetry)
         {
             _workItemQueryBuilderFactory = workItemQueryBuilderFactory;
+            _logger = logger;
         }
 
-        public override IMigrationClientConfig Config => _config;
+        internal TfsTeamProjectConfig Config { get; private set; }
+        
         public override ProjectData Project { get { return _project; } }
         public WorkItemStore Store { get { return _wistore; } }
 
@@ -41,43 +43,32 @@ namespace MigrationTools._EngineV1.Clients
             TfsWiqlDefinition wiqlDefinition,
             TfsWorkItemMigrationClient sourceWorkItemMigrationClient)
         {
-            Log.Debug("FilterExistingWorkItems: START | ");
+            _logger.LogDebug("FilterExistingWorkItems: START | ");
 
             var targetQuery =
                 string.Format(
                     @"SELECT [System.Id], [{0}] FROM WorkItems WHERE [System.TeamProject] = @TeamProject {1} ORDER BY {2}",
-                     _config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName,
+                     Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName,
                     wiqlDefinition.QueryBit,
                     wiqlDefinition.OrderBit);
 
-            Log.Debug("FilterByTarget: Query Execute...");
+            _logger.LogDebug("FilterByTarget: Query Execute...");
             var targetFoundItems = GetWorkItems(targetQuery);
-            Log.Debug("FilterByTarget: ... query complete.");
-            Log.Debug("FilterByTarget: Found {TargetWorkItemCount} based on the WIQLQueryBit in the target system.", targetFoundItems.Count);
-            var targetFoundIds = (from WorkItemData twi in targetFoundItems select GetReflectedWorkItemId(twi))
-                //exclude null IDs
-                .Where(x=> x != null)
-                .ToList();
+            _logger.LogDebug("FilterByTarget: ... query complete.");
+            _logger.LogDebug("FilterByTarget: Found {TargetWorkItemCount} based on the WIQLQueryBit in the target system.", targetFoundItems.Count);
+            var targetFoundIds = targetFoundItems.Select(twi => GetReflectedWorkItemId(twi)).Where(x => x != null).ToList();
+
             //////////////////////////////////////////////////////////
             sourceWorkItems = sourceWorkItems.Where(p => targetFoundIds.All(p2 => p2.ToString() != sourceWorkItemMigrationClient.CreateReflectedWorkItemId(p).ToString())).ToList();
-            Log.Debug("FilterByTarget: After removing all found work items there are {SourceWorkItemCount} remaining to be migrated.", sourceWorkItems.Count);
-            Log.Debug("FilterByTarget: END");
+            _logger.LogDebug("FilterByTarget: After removing all found work items there are {SourceWorkItemCount} remaining to be migrated.", sourceWorkItems.Count);
+            _logger.LogDebug("FilterByTarget: END");
             return sourceWorkItems;
         }
 
         public override WorkItemData FindReflectedWorkItem(WorkItemData workItemToReflect, bool cache)
         {
-            TfsReflectedWorkItemId ReflectedWorkItemId = new TfsReflectedWorkItemId(workItemToReflect);
-            WorkItem found = GetFromCache(ReflectedWorkItemId)?.ToWorkItem();
-            if (found == null)
-            {
-                found = FindReflectedWorkItemByReflectedWorkItemId(ReflectedWorkItemId)?.ToWorkItem();
-            }
-            if (found != null && cache)
-            {
-                AddToCache(found.AsWorkItemData());// TODO MEMORY LEAK
-            }
-            return found?.AsWorkItemData();
+            TfsReflectedWorkItemId reflectedWorkItemId = new TfsReflectedWorkItemId(workItemToReflect);
+            return FindReflectedWorkItemByReflectedWorkItemId(reflectedWorkItemId, cache);
         }
 
         public override WorkItemData FindReflectedWorkItemByReflectedWorkItemId(WorkItemData workItemToReflect)
@@ -89,7 +80,7 @@ namespace MigrationTools._EngineV1.Clients
         {
             var workItemQueryBuilder = _workItemQueryBuilderFactory.Create();
             StringBuilder queryBuilder = FindReflectedWorkItemQueryBase(workItemQueryBuilder);
-            queryBuilder.AppendFormat("[{0}] = @idToFind", MigrationClient.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName);
+            queryBuilder.AppendFormat("[{0}] = @idToFind", Config.ReflectedWorkItemIDFieldName);
             workItemQueryBuilder.AddParameter("idToFind", refId.ToString());
             workItemQueryBuilder.Query = queryBuilder.ToString();
             return FindWorkItemByQuery(workItemQueryBuilder);
@@ -99,46 +90,47 @@ namespace MigrationTools._EngineV1.Clients
         {
             var startTime = DateTime.UtcNow;
             var timer = System.Diagnostics.Stopwatch.StartNew();
-            Project y;
+            
             try
             {
-                y = (from Project x in Store.Projects where string.Equals(x.Name, MigrationClient.Config.AsTeamProjectConfig().Project, StringComparison.OrdinalIgnoreCase) select x).Single(); // Use Single instead of SingleOrDefault to force an exception here
+                var projectName = Config.Project;
+                var y = (from Project x in Store.Projects where string.Equals(x.Name, projectName, StringComparison.OrdinalIgnoreCase) select x).Single(); // Use Single instead of SingleOrDefault to force an exception here
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetProject", null, startTime, timer.Elapsed, "200", true));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetProject", null, startTime, timer.Elapsed, "200", true));
+                return y.ToProjectData(); // With SingleOrDefault earlier this would result in a NullReferenceException which is hard to debug
             }
             catch (Exception ex)
             {
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetProject", null, startTime, timer.Elapsed, "500", false));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetProject", null, startTime, timer.Elapsed, "500", false));
                 Telemetry.TrackException(ex,
                        new Dictionary<string, string> {
-                            { "CollectionUrl", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString() }
+                            { "CollectionUrl", Config.Collection.ToString() }
                        },
                        new Dictionary<string, double> {
                             { "Time",timer.ElapsedMilliseconds }
                        });
-                Log.Error(ex, "Unable to get project with name {ConfiguredProjectName}", MigrationClient.Config.AsTeamProjectConfig().Project);
+                _logger.LogError(ex, "Unable to get project with name {ConfiguredProjectName}", Config.Project);
                 throw;
             }
-            return y.ToProjectData(); // With SingleOrDefault earlier this would result in a NullReferenceException which is hard to debug
         }
 
         public override ReflectedWorkItemId GetReflectedWorkItemId(WorkItemData workItem)
         {
-            Log.Debug("GetReflectedWorkItemId: START");
+            _logger.LogDebug("GetReflectedWorkItemId: START");
             var local = workItem.ToWorkItem();
-            if (!local.Fields.Contains(Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName))
+            if (!local.Fields.Contains(Config.ReflectedWorkItemIDFieldName))
             {
-                Log.Debug("GetReflectedWorkItemId: END - no reflected work item id on work item");
+                _logger.LogDebug("GetReflectedWorkItemId: END - no reflected work item id on work item");
                 return null;
             }
-            string rwiid = local.Fields[Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName].Value.ToString();
+            string rwiid = local.Fields[Config.ReflectedWorkItemIDFieldName].Value.ToString();
             if (!string.IsNullOrEmpty(rwiid))
             {
-                Log.Debug("GetReflectedWorkItemId: END - Has ReflectedWorkItemIdField and has value");
+                _logger.LogDebug("GetReflectedWorkItemId: END - Has ReflectedWorkItemIdField and has value");
                 return new TfsReflectedWorkItemId(rwiid);
             }
-            Log.Debug("GetReflectedWorkItemId: END - Has ReflectedWorkItemIdField but has no value");
+            _logger.LogDebug("GetReflectedWorkItemId: END - Has ReflectedWorkItemIdField but has no value");
             return null;
         }
 
@@ -156,28 +148,28 @@ namespace MigrationTools._EngineV1.Clients
         {
             var startTime = DateTime.UtcNow;
             var timer = System.Diagnostics.Stopwatch.StartNew();
-            WorkItem y;
+            
             try
             {
-                y = Store.GetWorkItem(id);
+                var y = Store.GetWorkItem(id);
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItem", null, startTime, timer.Elapsed, "200", true));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetWorkItem", null, startTime, timer.Elapsed, "200", true));
+                return y?.AsWorkItemData();
             }
             catch (Exception ex)
             {
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItem", null, startTime, timer.Elapsed, "500", false));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetWorkItem", null, startTime, timer.Elapsed, "500", false));
                 Telemetry.TrackException(ex,
                        new Dictionary<string, string> {
-                            { "CollectionUrl", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString() }
+                            { "CollectionUrl", Config.Collection.ToString() }
                        },
                        new Dictionary<string, double> {
-                            { "Time",timer.ElapsedMilliseconds }
+                            { "Time", timer.ElapsedMilliseconds }
                        });
-                Log.Error(ex, "Unable to configure store");
+                _logger.LogError(ex, "Unable to get workitem with {workitemId} from store", id);
                 throw;
             }
-            return y?.AsWorkItemData();
         }
 
         public override List<WorkItemData> GetWorkItems()
@@ -194,16 +186,16 @@ namespace MigrationTools._EngineV1.Clients
 
         public override List<WorkItemData> GetWorkItems(IWorkItemQueryBuilder queryBuilder)
         {
-            queryBuilder.AddParameter("TeamProject", MigrationClient.Config.AsTeamProjectConfig().Project);
-            return queryBuilder.BuildWIQLQuery(MigrationClient).GetWorkItems();
+            queryBuilder.AddParameter("TeamProject", Config.Project);
+            return queryBuilder.BuildWIQLQuery(this).GetWorkItems();
         }
 
-        protected override void InnerConfigure(IMigrationClient migrationClient, bool bypassRules = true)
+        protected override void InnerConfigure(IMigrationClientConfig config, bool bypassRules = true)
         {
-            _config = MigrationClient.Config;
+            Config = config.AsTeamProjectConfig();
             _bypassRules = bypassRules ? WorkItemStoreFlags.BypassRules : WorkItemStoreFlags.None;
             _wistore = GetWorkItemStore();
-            _project = migrationClient.WorkItems.GetProject();
+            _project = GetProject();
         }
 
         public override WorkItemData PersistWorkItem(WorkItemData workItem)
@@ -217,13 +209,12 @@ namespace MigrationTools._EngineV1.Clients
             if (foundWorkItem is null)
             {
                 var wiqb = _workItemQueryBuilderFactory.Create();
-                wiqb.Query = string.Format(@"SELECT [System.Id] FROM WorkItems  WHERE [System.TeamProject]=@TeamProject AND [{0}] = '@idToFind'", MigrationClient.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName);
+                wiqb.Query = string.Format(@"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@TeamProject AND [{0}] = '@idToFind'", Config.ReflectedWorkItemIDFieldName);
                 wiqb.AddParameter("idToFind", refId.ToString());
-                wiqb.AddParameter("TeamProject", MigrationClient.Config.AsTeamProjectConfig().Project);
-                var query = wiqb.BuildWIQLQuery(MigrationClient);
-                var items = query.GetWorkItems();
+                wiqb.AddParameter("TeamProject", Config.Project);
+                var items = wiqb.BuildWIQLQuery(this).GetWorkItems();
 
-                foundWorkItem = items.FirstOrDefault(wi => wi.ToWorkItem().Fields[MigrationClient.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName].Value.ToString() == refId.ToString());
+                foundWorkItem = items.FirstOrDefault(wi => wi.ToWorkItem().Fields[Config.ReflectedWorkItemIDFieldName].Value.ToString() == refId.ToString());
                 if (cache && foundWorkItem != null)
                 {
                     AddToCache(foundWorkItem);
@@ -237,10 +228,10 @@ namespace MigrationTools._EngineV1.Clients
             StringBuilder s = new StringBuilder();
             s.Append("SELECT [System.Id] FROM WorkItems");
             s.Append(" WHERE ");
-            if (!MigrationClient.Config.AsTeamProjectConfig().AllowCrossProjectLinking)
+            if (!Config.AllowCrossProjectLinking)
             {
                 s.Append("[System.TeamProject]=@TeamProject AND ");
-                query.AddParameter("TeamProject", MigrationClient.Config.AsTeamProjectConfig().Project);
+                query.AddParameter("TeamProject", Config.Project);
             }
             return s;
         }
@@ -248,7 +239,7 @@ namespace MigrationTools._EngineV1.Clients
         private WorkItemData FindWorkItemByQuery(IWorkItemQueryBuilder query)
         {
             List<WorkItemData> newFound;
-            newFound = query.BuildWIQLQuery(MigrationClient).GetWorkItems();
+            newFound = query.BuildWIQLQuery(this).GetWorkItems();
             if (newFound.Count == 0)
             {
                 return null;
@@ -260,28 +251,27 @@ namespace MigrationTools._EngineV1.Clients
         {
             var startTime = DateTime.UtcNow;
             var timer = System.Diagnostics.Stopwatch.StartNew();
-            WorkItemStore store;
             try
             {
-                store = new WorkItemStore((TfsTeamProjectCollection)MigrationClient.InternalCollection, _bypassRules);
+                var store = new WorkItemStore((TfsTeamProjectCollection)MigrationClient.InternalCollection, _bypassRules);
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemStore", null, startTime, timer.Elapsed, "200", true));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetWorkItemStore", null, startTime, timer.Elapsed, "200", true));
+                return store;
             }
             catch (Exception ex)
             {
                 timer.Stop();
-                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString(), "GetWorkItemStore", null, startTime, timer.Elapsed, "500", false));
+                Telemetry.TrackDependency(new DependencyTelemetry("TfsObjectModel", Config.Collection.ToString(), "GetWorkItemStore", null, startTime, timer.Elapsed, "500", false));
                 Telemetry.TrackException(ex,
                        new Dictionary<string, string> {
-                            { "CollectionUrl", MigrationClient.Config.AsTeamProjectConfig().Collection.ToString() }
+                            { "CollectionUrl", Config.Collection.ToString() }
                        },
                        new Dictionary<string, double> {
                             { "Time",timer.ElapsedMilliseconds }
                        });
-                Log.Error(ex, "Unable to configure store");
+                _logger.LogError(ex, "Unable to configure store");
                 throw;
             }
-            return store;
         }
     }
 }

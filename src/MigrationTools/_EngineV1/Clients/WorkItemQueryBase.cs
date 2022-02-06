@@ -7,25 +7,21 @@ namespace MigrationTools._EngineV1.Clients
 {
     public abstract class WorkItemQueryBase : IWorkItemQuery
     {
-        private string _Query;
-        private Dictionary<string, string> _Parameters;
-        private IMigrationClient _MigrationClient;
-
         public WorkItemQueryBase(ITelemetryLogger telemetry)
         {
             Telemetry = telemetry;
         }
 
-        public string Query { get { return _Query; } }
-        protected Dictionary<string, string> Parameters { get { return _Parameters; } }
-        protected IMigrationClient MigrationClient { get { return _MigrationClient; } }
+        public string Query { get; private set; }
+        protected Dictionary<string, string> Parameters { get; private set; }
+        protected IWorkItemMigrationClient MigrationClient { get; private set; }
         protected ITelemetryLogger Telemetry { get; }
 
-        public void Configure(IMigrationClient migrationClient, string query, Dictionary<string, string> parameters)
+        public void Configure(IWorkItemMigrationClient workItemMigrationClient, string query, Dictionary<string, string> parameters)
         {
-            _MigrationClient = migrationClient ?? throw new ArgumentNullException(nameof(migrationClient));
-            _Query = query ?? throw new ArgumentNullException(nameof(query));
-            _Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
+            MigrationClient = workItemMigrationClient ?? throw new ArgumentNullException(nameof(workItemMigrationClient));
+            Query = query ?? throw new ArgumentNullException(nameof(query));
+            Parameters = parameters ?? throw new ArgumentNullException(nameof(parameters));
         }
 
         public abstract List<WorkItemData> GetWorkItems();

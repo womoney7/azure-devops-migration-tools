@@ -16,7 +16,6 @@ namespace MigrationTools._EngineV1.Clients
             Telemetry = telemetry;
         }
 
-        public abstract IMigrationClientConfig Config { get; }
         public abstract ProjectData Project { get; }
         protected IMigrationClient MigrationClient { get { return _migrationClient; } }
         protected ITelemetryLogger Telemetry { get; }
@@ -28,7 +27,7 @@ namespace MigrationTools._EngineV1.Clients
                 throw new ArgumentNullException(nameof(migrationClient));
             }
             _migrationClient = migrationClient;
-            InnerConfigure(migrationClient, bypassRules);
+            InnerConfigure(migrationClient.Config, bypassRules);
         }
 
         public abstract ReflectedWorkItemId CreateReflectedWorkItemId(WorkItemData workItem);
@@ -55,7 +54,7 @@ namespace MigrationTools._EngineV1.Clients
 
         public abstract List<WorkItemData> GetWorkItems(IWorkItemQueryBuilder queryBuilder);
 
-        protected abstract void InnerConfigure(IMigrationClient migrationClient, bool bypassRules = true);
+        protected abstract void InnerConfigure(IMigrationClientConfig config, bool bypassRules = true);
 
         public abstract WorkItemData PersistWorkItem(WorkItemData workItem);
 
