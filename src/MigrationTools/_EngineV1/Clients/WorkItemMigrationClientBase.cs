@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.DataContracts;
@@ -32,6 +32,7 @@ namespace MigrationTools._EngineV1.Clients
 
         public abstract ReflectedWorkItemId CreateReflectedWorkItemId(WorkItemData workItem);
 
+        public abstract int FindReflectedWorkItemId(ReflectedWorkItemId sourceId);
         public abstract WorkItemData FindReflectedWorkItem(WorkItemData reflectedWorkItem, bool cache);
 
         public abstract WorkItemData FindReflectedWorkItemByReflectedWorkItemId(string reflectedWorkItemId);
@@ -52,6 +53,7 @@ namespace MigrationTools._EngineV1.Clients
 
         public abstract List<int> GetWorkItemIds(string WIQLQuery);
 
+        public abstract List<WorkItemData> GetWorkItems(List<int> ids);
         public abstract List<WorkItemData> GetWorkItems(string WIQLQuery);
 
         public abstract List<WorkItemData> GetWorkItems(IWorkItemQueryBuilder queryBuilder);

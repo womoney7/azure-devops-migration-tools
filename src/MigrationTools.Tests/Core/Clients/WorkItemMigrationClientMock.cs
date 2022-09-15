@@ -161,5 +161,15 @@ namespace MigrationTools.Clients.Tests
         {
             throw new System.NotImplementedException();
         }
+
+        public List<WorkItemData> GetWorkItems(List<int> ids)
+        {
+            throw new System.NotImplementedException();
+        }
+
+        public int FindReflectedWorkItemId(ReflectedWorkItemId sourceId)
+        {
+            throw new System.NotImplementedException();
+        }
     }
 }

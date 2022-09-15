@@ -56,28 +56,21 @@ namespace MigrationTools.Enrichers
                     try
                     {
                         Log.LogInformation("Migrating link for {sourceWorkItemLinkStartId} of type {ItemGetTypeName}", sourceWorkItemLinkStart.Id, item.GetType().Name);
-                        if (IsHyperlink(item))
+                        switch (item)
                         {
-                            CreateHyperlink((Hyperlink)item, targetWorkItemLinkStart);
-                        }
-                        else if (IsRelatedLink(item))
-                        {
-                            RelatedLink rl = (RelatedLink)item;
-                            CreateRelatedLink(sourceWorkItemLinkStart, rl, targetWorkItemLinkStart);
-                        }
-                        else if (IsExternalLink(item))
-                        {
-                            var el = (ExternalLink)item;
-                            if (!IsBuildLink(el))
-                            {
-                                CreateExternalLink(el, targetWorkItemLinkStart);
-                            }
-                        }
-                        else
-                        {
-                            UnknownLinkTypeException ex = new UnknownLinkTypeException(string.Format("  [UnknownLinkType] Unable to {0}", item.GetType().Name));
-                            Log.LogError(ex, "LinkMigrationContext");
-                            throw ex;
+                            case Hyperlink hyperlink:
+                                CreateHyperlink(hyperlink, targetWorkItemLinkStart);
+                                break;
+                            case RelatedLink relatedLink:
+                                CreateRelatedLink(sourceWorkItemLinkStart, relatedLink, targetWorkItemLinkStart);
+                                break;
+                            case ExternalLink externalLink when IsBuildLink(externalLink) == false:
+                                CreateExternalLink(externalLink, targetWorkItemLinkStart);
+                                break;
+                            default:
+                                UnknownLinkTypeException ex = new UnknownLinkTypeException(string.Format("  [UnknownLinkType] Unable to {0}", item.GetType().Name));
+                                Log.LogError(ex, "LinkMigrationContext");
+                                throw ex;
                         }
                     }
                     catch (WorkItemLinkValidationException ex)
@@ -139,9 +132,7 @@ namespace MigrationTools.Enrichers
 
         private void CreateExternalLink(ExternalLink sourceLink, WorkItemData target)
         {
-            var exist = (from Link l in target.ToWorkItem().Links
-                         where l is ExternalLink && ((ExternalLink)l).LinkedArtifactUri == ((ExternalLink)sourceLink).LinkedArtifactUri
-                         select (ExternalLink)l).SingleOrDefault();
+            var exist = target.ToWorkItem().Links.OfType<ExternalLink>().SingleOrDefault(el => el.LinkedArtifactUri == sourceLink.LinkedArtifactUri);
             if (exist == null)
             {
                 Log.LogInformation("Creating new {SourceLinkType} on {TargetId}", sourceLink.GetType().Name, target.Id);
@@ -159,7 +150,7 @@ namespace MigrationTools.Enrichers
                     catch (Exception ex)
                     {
                         // Ignore this link because the TFS server didn't recognize its type (There's no point in crashing the rest of the migration due to a link)
-                        if(ex.Message.Contains("Unrecognized Resource link"))
+                        if (ex.Message.Contains("Unrecognized Resource link"))
                         {
                             Log.LogError(ex, "[{ExceptionType}] Failed to save link {SourceLinkType} on {TargetId}", ex.GetType().Name, sourceLink.GetType().Name, target.Id);
                             // Remove the link from the target so it doesn't cause problems downstream
@@ -180,175 +171,147 @@ namespace MigrationTools.Enrichers
             }
         }
 
-        private bool IsExternalLink(Link item)
-        {
-            return item is ExternalLink;
-        }
-
         private bool IsBuildLink(ExternalLink link)
         {
             return link.LinkedArtifactUri != null &&
                    link.LinkedArtifactUri.StartsWith("vstfs:///Build/Build/", StringComparison.InvariantCultureIgnoreCase);
         }
 
-        private void CreateRelatedLink(WorkItemData wiSourceL, RelatedLink item, WorkItemData wiTargetL)
+        private void CreateRelatedLink(WorkItemData sourceLeft, RelatedLink item, WorkItemData targetLeft)
         {
             RelatedLink rl = item;
-            WorkItemData wiSourceR = null;
-            WorkItemData wiTargetR = null;
-
-            Log.LogDebug("RelatedLink is of ArtifactLinkType='{ArtifactLinkType}':LinkTypeEnd='{LinkTypeEndImmutableName}' on WorkItemId s:{ids} t:{idt}", rl.ArtifactLinkType.Name, rl.LinkTypeEnd == null? "null" : rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiTargetL.Id);
+            //WorkItemData wiSourceR = null;
+            //WorkItemData wiTargetR = null;
+            int targetRightId = -1;
+            Log.LogDebug("RelatedLink is of ArtifactLinkType='{ArtifactLinkType}':LinkTypeEnd='{LinkTypeEndImmutableName}' on WorkItemId s:{ids} t:{idt}", rl.ArtifactLinkType.Name, rl.LinkTypeEnd == null ? "null" : rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, targetLeft.Id);
 
             if (rl.LinkTypeEnd != null) // On a registered link type these will for sure fail as target is not in the system.
             {
                 try
                 {
-                    wiSourceR = Engine.Source.WorkItems.GetWorkItem(rl.RelatedWorkItemId.ToString());
+                    targetRightId = GetRightHandSideTargetWi(rl.RelatedWorkItemId, targetLeft);
                 }
                 catch (Exception ex)
                 {
-                    Log.LogError(ex, "  [FIND-FAIL] Adding Link of type {0} where wiSourceL={1}, wiTargetL={2} ", rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiTargetL.Id);
-                    return;
-                }
-                try
-                {
-                    wiTargetR = GetRightHandSideTargetWi(wiSourceR, wiTargetL);
-                }
-                catch (Exception ex)
-                {
-                    Log.LogError(ex, "  [FIND-FAIL] Adding Link of type {0} where wiSourceL={1}, wiTargetL={2} ", rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiTargetL.Id);
+                    Log.LogError(ex, "  [FIND-FAIL] Adding Link of type {0} where wiSourceL={1}, wiTargetL={2} ", rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, targetLeft.Id);
                     return;
                 }
             }
-            
-            if (wiTargetR != null)
+
+            if (targetRightId == -1)
             {
-                bool IsExisting = false;
-                try
-                {
-                    var exist = (
-                        from Link l in wiTargetL.ToWorkItem().Links
-                        where l is RelatedLink
-                            && ((RelatedLink)l).RelatedWorkItemId.ToString() == wiTargetR.Id
-                            && ((RelatedLink)l).LinkTypeEnd.ImmutableName == item.LinkTypeEnd.ImmutableName
-                        select (RelatedLink)l).SingleOrDefault();
-                    IsExisting = (exist != null);
-                }
-                catch (Exception ex)
-                {
-                    Log.LogError(ex, "  [SKIP] Unable to migrate links where wiSourceL={0}, wiSourceR={1}, wiTargetL={2}", ((wiSourceL != null) ? wiSourceL.Id.ToString() : "NotFound"), ((wiSourceR != null) ? wiSourceR.Id.ToString() : "NotFound"), ((wiTargetL != null) ? wiTargetL.Id.ToString() : "NotFound"));
-                    return;
-                }
+                Log.LogWarning("[SKIP] [LINK_CAPTURE_RELATED] [{RegisteredLinkType}] target not found. wiSourceL={wiSourceL}, wiSourceR={wiSourceR}, wiTargetL={wiTargetL}", rl.ArtifactLinkType.GetType().Name, sourceLeft == null ? "null" : sourceLeft.Id, rl.RelatedWorkItemId.ToString(), targetLeft == null ? "null" : targetLeft.Id);
+                return;
+            }
 
-                if (!IsExisting && !wiTargetR.ToWorkItem().IsAccessDenied)
-                {
-                    if (wiSourceR.Id != wiTargetR.Id)
-                    {
-                        Log.LogInformation("  [CREATE-START] Adding Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiSourceR.Id, wiTargetL.Id, wiTargetR.Id);
-                        var client = (TfsWorkItemMigrationClient)Engine.Target.WorkItems;
-                        if (!client.Store.WorkItemLinkTypes.LinkTypeEnds.Contains(rl.LinkTypeEnd.ImmutableName))
-                        {
-                            Log.LogError($"  [SKIP] Unable to migrate Link because type {rl.LinkTypeEnd.ImmutableName} does not exist in the target project.");
-                            return;
-                        }
 
-                        WorkItemLinkTypeEnd linkTypeEnd = client.Store.WorkItemLinkTypes.LinkTypeEnds[rl.LinkTypeEnd.ImmutableName];
-                        RelatedLink newRl = new RelatedLink(linkTypeEnd, int.Parse(wiTargetR.Id));
-                        if (linkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Forward")
-                        {
-                            var potentialParentConflictLink = ( // TF201036: You cannot add a Child link between work items xxx and xxx because a work item can have only one Parent link.
-                                    from Link l in wiTargetR.ToWorkItem().Links
-                                    where l is RelatedLink
-                                        && ((RelatedLink)l).LinkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse"
-                                    select (RelatedLink)l).SingleOrDefault();
-                            if (potentialParentConflictLink != null)
-                            {
-                                wiTargetR.ToWorkItem().Links.Remove(potentialParentConflictLink);
-                            }
-                            linkTypeEnd = ((TfsWorkItemMigrationClient)Engine.Target.WorkItems).Store.WorkItemLinkTypes.LinkTypeEnds["System.LinkTypes.Hierarchy-Reverse"];
-                            RelatedLink newLl = new RelatedLink(linkTypeEnd, int.Parse(wiTargetL.Id));
-                            wiTargetR.ToWorkItem().Links.Add(newLl);
-                            wiTargetR.ToWorkItem().Fields["System.ChangedBy"].Value = "Migration";
-                            wiTargetR.SaveToAzureDevOps();
-                        }
-                        else
-                        {
-                            if (linkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse")
-                            {
-                                var potentialParentConflictLink = ( // TF201065: You can not add a Parent link to this work item because a work item can have only one link of this type.
-                                    from Link l in wiTargetL.ToWorkItem().Links
-                                    where l is RelatedLink
-                                        && ((RelatedLink)l).LinkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse"
-                                    select (RelatedLink)l).SingleOrDefault();
-                                if (potentialParentConflictLink != null)
-                                {
-                                    wiTargetL.ToWorkItem().Links.Remove(potentialParentConflictLink);
-                                }
-                            }
-                            wiTargetL.ToWorkItem().Links.Add(newRl);
-                            if (_save)
-                            {
-                                wiTargetL.SaveToAzureDevOps();
-                            }
-                        }
-                        Log.LogInformation(
-                                "  [CREATE-SUCCESS] Adding Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ",
-                                rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiSourceR.Id, wiTargetL.Id, wiTargetR.Id);
-                    }
-                    else
-                    {
-                        Log.LogInformation(
-                                  "  [SKIP] Unable to migrate link where Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} as target WI has not been migrated",
-                                  rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiSourceR.Id, wiTargetL.Id, wiTargetR.Id);
-                    }
-                }
-                else
+            bool isExisting = false;
+            try
+            {
+                var exist = targetLeft.ToWorkItem().Links.OfType<RelatedLink>()
+                             .SingleOrDefault(l => l.RelatedWorkItemId == targetRightId && l.LinkTypeEnd.ImmutableName == item.LinkTypeEnd.ImmutableName);
+                isExisting = exist != null;
+            }
+            catch (Exception ex)
+            {
+                Log.LogError(ex, "  [SKIP] Unable to migrate links where wiSourceL={0}, wiSourceR={1}, wiTargetL={2}", ((sourceLeft != null) ? sourceLeft.Id.ToString() : "NotFound"), rl.RelatedWorkItemId.ToString(), (targetLeft != null) ? targetLeft.Id.ToString() : "NotFound");
+                return;
+            }
+
+            if (isExisting)
+            {
+                Log.LogInformation("  [SKIP] Already Exists a Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, rl.RelatedWorkItemId.ToString(), targetLeft.Id, targetRightId);
+                return;
+            }
+
+            //if (wiTargetR.ToWorkItem().IsAccessDenied)
+            //{
+            //    Log.LogInformation("  [AccessDenied] The Target  work item is inaccessable to create a Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, wiSourceR.Id, targetLeft.Id, wiTargetR.Id);
+            //    return;
+            //}
+
+            if (targetRightId == -1) // cant this by freak chance be the same even though they are not the same item
+            {
+                Log.LogInformation(
+                          "  [SKIP] Unable to migrate link where Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3} as target WI has not been migrated",
+                          rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, rl.RelatedWorkItemId.ToString(), targetLeft.Id);
+                return;
+            }
+
+            Log.LogInformation("  [CREATE-START] Adding Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, rl.RelatedWorkItemId.ToString(), targetLeft.Id, targetRightId);
+            var client = (TfsWorkItemMigrationClient)Engine.Target.WorkItems;
+            if (!client.Store.WorkItemLinkTypes.LinkTypeEnds.Contains(rl.LinkTypeEnd.ImmutableName))
+            {
+                Log.LogError($"  [SKIP] Unable to migrate Link because type {rl.LinkTypeEnd.ImmutableName} does not exist in the target project.");
+                return;
+            }
+
+            var linkTypeEnd = client.Store.WorkItemLinkTypes.LinkTypeEnds[rl.LinkTypeEnd.ImmutableName];
+            if (linkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Forward")
+            {
+                var targetRightWorkItem = Engine.Target.WorkItems.GetWorkItem(targetRightId);
+                // TF201036: You cannot add a Child link between work items xxx and xxx because a work item can have only one Parent link.
+                var potentialParentConflictLink = targetRightWorkItem.ToWorkItem().Links.OfType<RelatedLink>().SingleOrDefault(l => l.LinkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse");
+                if (potentialParentConflictLink != null)
                 {
-                    if (IsExisting)
-                    {
-                        Log.LogInformation("  [SKIP] Already Exists a Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiSourceR.Id, wiTargetL.Id, wiTargetR.Id);
-                    }
-                    if (wiTargetR.ToWorkItem().IsAccessDenied)
-                    {
-                        Log.LogInformation("  [AccessDenied] The Target  work item is inaccessable to create a Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ", rl.LinkTypeEnd.ImmutableName, wiSourceL.Id, wiSourceR.Id, wiTargetL.Id, wiTargetR.Id);
-                    }
+                    targetRightWorkItem.ToWorkItem().Links.Remove(potentialParentConflictLink);
                 }
+                linkTypeEnd = ((TfsWorkItemMigrationClient)Engine.Target.WorkItems).Store.WorkItemLinkTypes.LinkTypeEnds["System.LinkTypes.Hierarchy-Reverse"];
+                var newLl = new RelatedLink(linkTypeEnd, int.Parse(targetLeft.Id));
+                targetRightWorkItem.ToWorkItem().Links.Add(newLl);
+                targetRightWorkItem.ToWorkItem().Fields["System.ChangedBy"].Value = "Migration";
+                targetRightWorkItem.SaveToAzureDevOps();
             }
             else
             {
-                Log.LogWarning("[SKIP] [LINK_CAPTURE_RELATED] [{RegisteredLinkType}] target not found. wiSourceL={wiSourceL}, wiSourceR={wiSourceR}, wiTargetL={wiTargetL}", rl.ArtifactLinkType.GetType().Name, wiSourceL == null ? "null" : wiSourceL.Id , wiSourceR == null ? "null" : wiSourceR.Id, wiTargetL == null? "null": wiTargetL.Id);
+                if (linkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse")
+                {
+                    // TF201065: You can not add a Parent link to this work item because a work item can have only one link of this type.
+                    var potentialParentConflictLink = targetLeft.ToWorkItem().Links.OfType<RelatedLink>().SingleOrDefault(l => l.LinkTypeEnd.ImmutableName == "System.LinkTypes.Hierarchy-Reverse");
+                    if (potentialParentConflictLink != null)
+                    {
+                        targetLeft.ToWorkItem().Links.Remove(potentialParentConflictLink);
+                    }
+                }
+
+                var newRl = new RelatedLink(linkTypeEnd, targetRightId);
+                targetLeft.ToWorkItem().Links.Add(newRl);
+                if (_save)
+                {
+                    targetLeft.SaveToAzureDevOps();
+                }
             }
+            Log.LogInformation(
+                    "  [CREATE-SUCCESS] Adding Link of type {0} where wiSourceL={1}, wiSourceR={2}, wiTargetL={3}, wiTargetR={4} ",
+                    rl.LinkTypeEnd.ImmutableName, sourceLeft.Id, rl.RelatedWorkItemId.ToString(), targetLeft.Id, targetRightId);
         }
 
-        private WorkItemData GetRightHandSideTargetWi(WorkItemData wiSourceR, WorkItemData wiTargetL)
+        private int GetRightHandSideTargetWi(int sourceRightId, WorkItemData wiTargetL)
         {
-            WorkItemData wiTargetR;
+            int targetRightId;
+            //WorkItemData wiTargetR;
             if (!(wiTargetL == null)
-                && wiSourceR.ToWorkItem().Project.Name == wiTargetL.ToWorkItem().Project.Name
-                && wiSourceR.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", "") == wiTargetL.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", ""))
+                && Engine.Source.Config.AsTeamProjectConfig().Project == wiTargetL.ToWorkItem().Project.Name
+                && Engine.Source.Config.AsTeamProjectConfig().Collection.AbsoluteUri.Replace("/", "") == wiTargetL.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", ""))
             {
                 // Moving to same team project as SourceR
-                wiTargetR = wiSourceR;
+                targetRightId = sourceRightId;
             }
             else
             {
                 // Moving to Other Team Project from Source
-                wiTargetR = Engine.Target.WorkItems.FindReflectedWorkItem(wiSourceR, true);
-                if (wiTargetR == null) // Assume source only (other team project)
-                {
-                    wiTargetR = wiSourceR;
-                    if (wiTargetR.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", "") != wiSourceR.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", ""))
-                    {
-                        wiTargetR = null; // Totally bogus break! as not same team collection
-                    }
-                }
+                var reflectedWorkItemId = new TfsReflectedWorkItemId(sourceRightId, Engine.Source.Config.AsTeamProjectConfig().Project, Engine.Source.Config.AsTeamProjectConfig().Collection);
+                targetRightId = Engine.Target.WorkItems.FindReflectedWorkItemId(reflectedWorkItemId);
+                //if (targetRightId == -1) // Assume source only (other team project)
+                //{
+                //    targetRightId = sourceRightId;
+                //    if (wiTargetR.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", "") != wiSourceR.ToWorkItem().Project.Store.TeamProjectCollection.Uri.ToString().Replace("/", ""))
+                //    {
+                //        targetRightId = -1; // Totally bogus break! as not same team collection
+                //    }
+                //}
             }
-            return wiTargetR;
-        }
-
-        private bool IsRelatedLink(Link item)
-        {
-            return item is RelatedLink;
+            return targetRightId;
         }
 
         private void CreateHyperlink(Hyperlink sourceLink, WorkItemData target)
@@ -360,10 +323,9 @@ namespace MigrationTools.Enrichers
                 return;
             }
 
-            var exist = (from hyperlink in target.ToWorkItem().Links.OfType<Hyperlink>()
-                         let absoluteUri = GetAbsoluteUri(hyperlink)
-                         where string.Equals(sourceLinkAbsoluteUri, absoluteUri, StringComparison.OrdinalIgnoreCase)
-                         select hyperlink).Any();
+            var targetItem = target.ToWorkItem();
+
+            var exist = targetItem.Links.OfType<Hyperlink>().Any(hl => string.Equals(sourceLinkAbsoluteUri, GetAbsoluteUri(hl), StringComparison.OrdinalIgnoreCase));
 
             if (exist)
             {
@@ -375,7 +337,7 @@ namespace MigrationTools.Enrichers
                 Comment = sourceLink.Comment
             };
 
-            target.ToWorkItem().Links.Add(hl);
+            targetItem.Links.Add(hl);
             if (_save)
             {
                 target.SaveToAzureDevOps();
@@ -406,11 +368,6 @@ namespace MigrationTools.Enrichers
                 }
             }
             return true;
-        }
-
-        private bool IsHyperlink(Link item)
-        {
-            return item is Hyperlink;
         }
 
         [Obsolete("v2 Archtecture: use Configure(bool save = true, bool filter = true) instead", true)]

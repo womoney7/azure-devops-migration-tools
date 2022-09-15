@@ -22,6 +22,7 @@ namespace MigrationTools._EngineV1.Clients
 
         List<int> GetWorkItemIds(string WIQLQuery);
 
+        List<WorkItemData> GetWorkItems(List<int> ids);
         List<WorkItemData> GetWorkItems(string WIQLQuery);
 
         List<WorkItemData> GetWorkItems(IWorkItemQueryBuilder queryBuilder);
@@ -30,6 +31,7 @@ namespace MigrationTools._EngineV1.Clients
 
         WorkItemData GetRevision(WorkItemData workItem, int revision);
 
+        int FindReflectedWorkItemId(ReflectedWorkItemId sourceId);
         WorkItemData FindReflectedWorkItem(WorkItemData workItem, bool cache);
 
         WorkItemData FindReflectedWorkItemByReflectedWorkItemId(string refId);

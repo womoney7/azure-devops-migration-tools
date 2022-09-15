@@ -64,6 +64,21 @@ namespace MigrationTools._EngineV1.Clients
             return sourceWorkItems;
         }
 
+        public override int FindReflectedWorkItemId(ReflectedWorkItemId sourceId)
+        {
+            var wiqb = _workItemQueryBuilderFactory.Create();
+            wiqb.Query = string.Format(@"SELECT [System.Id] FROM WorkItems  WHERE [System.TeamProject]=@TeamProject AND [{0}] = '@idToFind'", MigrationClient.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName);
+            wiqb.AddParameter("idToFind", sourceId.ToString());
+            wiqb.AddParameter("TeamProject", MigrationClient.Config.AsTeamProjectConfig().Project);
+            var query = wiqb.BuildWIQLQuery(MigrationClient);
+            var ids = query.GetWorkItemIds();
+            if(ids.Count == 1)
+            {
+                return ids[0];
+            }
+            return -1;
+        }
+
         public override WorkItemData FindReflectedWorkItem(WorkItemData workItemToReflect, bool cache)
         {
             TfsReflectedWorkItemId ReflectedWorkItemId = new TfsReflectedWorkItemId(workItemToReflect);
@@ -188,6 +203,16 @@ namespace MigrationTools._EngineV1.Clients
         {
             var query = GetWorkItemQuery(WIQLQuery);
             return query.GetWorkItemIds();
+        }
+
+        public override List<WorkItemData> GetWorkItems(List<int> ids)
+        {
+            var wiqb = _workItemQueryBuilderFactory.Create();
+            wiqb.Query = string.Format(@"SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject]=@TeamProject AND [System.Id] IN (@idsToFind)", MigrationClient.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName);
+            wiqb.AddParameter("idsToFind", string.Join(",", ids));
+            wiqb.AddParameter("TeamProject", MigrationClient.Config.AsTeamProjectConfig().Project);
+            var query = wiqb.BuildWIQLQuery(MigrationClient);
+            return query.GetWorkItems();
         }
 
         public override List<WorkItemData> GetWorkItems(string WIQLQuery)
