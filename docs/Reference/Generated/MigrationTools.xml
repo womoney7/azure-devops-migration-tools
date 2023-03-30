@@ -4,6 +4,16 @@
         <name>MigrationTools</name>
     </assembly>
     <members>
+        <member name="P:MigrationTools.DataContracts.Pipelines.AgentPool.CreatedBy">
+            <summary>
+            Creator of the pool. The creator of the pool is automatically added into the administrators group for the pool on creation.
+            </summary>
+        </member>
+        <member name="P:MigrationTools.DataContracts.Pipelines.AgentPool.CreatedOn">
+            <summary>
+            The date/time of the pool creation.
+            </summary>
+        </member>
         <member name="M:MigrationTools.DataContracts.Pipelines.BuildDefinition.ResetObject">
             <inheritdoc/>
         </member>

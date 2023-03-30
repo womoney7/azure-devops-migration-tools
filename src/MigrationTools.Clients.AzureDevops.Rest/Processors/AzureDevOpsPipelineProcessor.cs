@@ -3,7 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Xml.Linq;
+
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.Common.Utility;
+
 using MigrationTools.DataContracts;
 using MigrationTools.DataContracts.Pipelines;
 using MigrationTools.Endpoints;
@@ -78,6 +83,7 @@ namespace MigrationTools.Processors
             IEnumerable<Mapping> serviceConnectionMappings = null;
             IEnumerable<Mapping> taskGroupMappings = null;
             IEnumerable<Mapping> variableGroupMappings = null;
+
             if (_Options.MigrateServiceConnections)
             {
                 serviceConnectionMappings = await CreateServiceConnectionsAsync();
@@ -92,6 +98,7 @@ namespace MigrationTools.Processors
             }
             if (_Options.MigrateBuildPipelines)
             {
+                await CreateAgentPoolsAsync();
                 await CreateBuildPipelinesAsync(taskGroupMappings, variableGroupMappings);
             }
 
@@ -228,7 +235,7 @@ namespace MigrationTools.Processors
                 {
                     Log.LogWarning(
                         @"{DefinitionType} ""{DefinitionName}"" cannot be migrated because the Task(s) ""{MissingTaskNames}"" are not available. This usually happens if the extension for the task is not installed.",
-                        typeof(TaskGroup).Name, g.Name ,string.Join(",", missingTasksNames));
+                        typeof(TaskGroup).Name, g.Name, string.Join(",", missingTasksNames));
                     return false;
                 }
                 return true;
@@ -299,6 +306,9 @@ namespace MigrationTools.Processors
             var definitionsToBeMigrated = FilterOutExistingDefinitions(sourceDefinitions, targetDefinitions);
             definitionsToBeMigrated = FilterOutIncompatibleBuildDefinitions(definitionsToBeMigrated, availableTasks).ToList();
             definitionsToBeMigrated = FilterAwayIfAnyMapsAreMissing(definitionsToBeMigrated, TaskGroupMapping, VariableGroupMapping);
+            //get target projects
+            //string projectName = Target.Options.Project.Trim();
+            //var targetProject = (await Target.GetApiDefinitionsAsync<Projects>()).FirstOrDefault(p => p.Name.Trim() == projectName);
 
             // Replace taskgroup and variablegroup sIds with tIds
             foreach (var definitionToBeMigrated in definitionsToBeMigrated)
@@ -308,6 +318,15 @@ namespace MigrationTools.Processors
                     .FirstOrDefault(c => c.Id == sourceConnectedServiceId)?.Name == s.Name)?.Id;
                 definitionToBeMigrated.Repository.Properties.ConnectedServiceId = targetConnectedServiceId;
 
+                //definitionToBeMigrated.Triggers?.ForEach(trigger =>
+                //{
+                //    var trig = trigger as IDictionary<string, object>;
+                //    if (trig.ContainsKey("definition"))
+                //    {
+                //        dynamic definition = trig["definition"];
+                //        definition.project = new { id = targetProject.Id, name = targetProject.Name };
+                //    }
+                //});
 
                 MapRepositoriesInBuidDefinition(sourceRepositories, targetRepositories, definitionToBeMigrated);
 
@@ -591,7 +610,31 @@ namespace MigrationTools.Processors
 
             var sourceDefinitions = await Source.GetApiDefinitionsAsync<ServiceConnection>();
             var targetDefinitions = await Target.GetApiDefinitionsAsync<ServiceConnection>();
-            var mappings = await Target.CreateApiDefinitionsAsync(FilterOutExistingDefinitions(sourceDefinitions, targetDefinitions));
+            //get target projects
+            string projectName = Target.Options.Project.Trim();
+            var targetProject = (await Target.GetApiDefinitionsAsync<Projects>()).FirstOrDefault(p => p.Name.Trim() == projectName);
+
+            var definitionsToBeMigrated = FilterOutExistingDefinitions(sourceDefinitions, targetDefinitions);
+            definitionsToBeMigrated.ForEach(sc =>
+            {
+                if (sc.ServiceEndpointProjectReferences.Count > 1)
+                {
+                    sc.ServiceEndpointProjectReferences.RemoveRange(1, sc.ServiceEndpointProjectReferences.Count - 1);
+                }
+
+                sc.ServiceEndpointProjectReferences?.ForEach(proRef =>
+                {
+                    proRef.ProjectReference =
+                        new Microsoft.VisualStudio.Services.ServiceEndpoints.WebApi.ProjectReference()
+                        {
+                            Id = new Guid(targetProject.Id),
+                            Name = targetProject.Name
+                        };
+                });
+            });
+
+
+            var mappings = await Target.CreateApiDefinitionsAsync(definitionsToBeMigrated);
             mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
             return mappings;
         }
@@ -641,6 +684,23 @@ namespace MigrationTools.Processors
                 };
             }
             var mappings = await Target.CreateApiDefinitionsAsync(filteredDefinition);
+            mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
+            return mappings;
+        }
+
+        private async Task<IEnumerable<Mapping>> CreateAgentPoolsAsync()
+        {
+            Log.LogInformation($"Processing Agent Pools..");
+
+            var sourceDefinitions = await Source.GetApiDefinitionsAsync<AgentPool>();
+            var targetDefinitions = await Target.GetApiDefinitionsAsync<AgentPool>();
+
+            sourceDefinitions = sourceDefinitions.Where(p => p.AgentCloudId != 1);
+
+            var definitionsToBeMigrated = FilterOutExistingDefinitions(sourceDefinitions, targetDefinitions);
+
+
+            var mappings = await Target.CreateApiDefinitionsAsync(definitionsToBeMigrated);
             mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
             return mappings;
         }

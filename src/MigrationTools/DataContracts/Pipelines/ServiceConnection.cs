@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 using Microsoft.VisualStudio.Services.Common.Internal;
+using Microsoft.VisualStudio.Services.ServiceEndpoints;
 using Microsoft.VisualStudio.Services.ServiceEndpoints.WebApi;
 using Microsoft.VisualStudio.Services.WebApi;
 using Newtonsoft.Json.Linq;
@@ -127,6 +128,9 @@ namespace MigrationTools.DataContracts.Pipelines
             set;
         }
 
+        [DataMember(EmitDefaultValue = true)]
+        public List<ServiceEndpointProjectReference> ServiceEndpointProjectReferences { get; set; }
+
         public static bool ValidateServiceEndpoint(ServiceEndpoint endpoint, ref string message)
         {
             if (endpoint == null)
@@ -216,4 +220,6 @@ namespace MigrationTools.DataContracts.Pipelines
             return false;
         }
     }
+
+
 }

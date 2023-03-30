@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Dynamic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -7,6 +8,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
@@ -127,7 +129,7 @@ namespace MigrationTools.Endpoints
             //    queryParts = string.Join("?", pathSplit.Skip(1)).TrimStart('?');
             //}
 
-            string unformatted = (apiPathAttribute.IncludeProject ? "/" + Options.Project : "") + "/_apis/" + pathSplit[0] + (apiPathAttribute.IncludeTrailingSlash ? "/" : "");
+            string unformatted = (apiPathAttribute.IncludeProject ? "/" +  Options.Project : "") + "/_apis/" + pathSplit[0] + (apiPathAttribute.IncludeTrailingSlash ? "/" : "");
             builder.Path += Regex.IsMatch(unformatted, @"{\d}") ? string.Format(unformatted, routeParameters) : unformatted;
 
             if (apiNameAttribute.Name == "Release Piplines")
@@ -145,7 +147,7 @@ namespace MigrationTools.Endpoints
                 }
                 else
                 {
-                    builder.Query = "api-version=5.1";
+                    builder.Query = "api-version=6.0";
                 }
             }
             else
@@ -446,11 +448,11 @@ namespace MigrationTools.Endpoints
                 switch (apiPathAttribute.UpdateVerb)
                 {
                     case HttpVerbs.Patch:
-                        result = await client.PatchAsync(client.BaseAddress.ToString() + suffix, content);
-                        break;
+                    result = await client.PatchAsync(client.BaseAddress.ToString() + suffix, content);
+                    break;
                     default:
-                        result = await client.PutAsync(client.BaseAddress.ToString() + suffix, content);
-                        break;
+                    result = await client.PutAsync(client.BaseAddress.ToString() + suffix, content);
+                    break;
                 }
 
                 var responseContent = await result.Content.ReadAsStringAsync();

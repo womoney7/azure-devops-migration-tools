@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Dynamic;
 using System.Linq;
+
 using Microsoft.VisualStudio.Services.Common;
+
 using Newtonsoft.Json;
 
 namespace MigrationTools.DataContracts.Pipelines
@@ -72,13 +74,14 @@ namespace MigrationTools.DataContracts.Pipelines
             Links = null;
             AuthoredBy = null;
             Queue = null;
+            Triggers = null;
             Url = null;
             Uri = null;
             Revision = 0;
             Id = null;
             Project = null;
 
-            if (q_name != string.Empty)
+            if (q_name != string.Empty && !q_name.StartsWith("Hosted")) 
             {
                 Queue = new Queue();
                 Queue.Name = q_name;

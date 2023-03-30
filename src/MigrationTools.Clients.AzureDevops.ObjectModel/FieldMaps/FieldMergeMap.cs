@@ -46,7 +46,7 @@ namespace MigrationTools.FieldMaps.AzureDevops.ObjectModel
             List<string> sourceData  = new List<string>();
             foreach (string item in Config.sourceFields)
             {
-                if (source.Fields[item].Value != null)
+                if (source.Fields.Contains(item) && source.Fields[item].Value != null)
                 {
                     sourceData.Add(source.Fields[item].Value.ToString());
                 }
