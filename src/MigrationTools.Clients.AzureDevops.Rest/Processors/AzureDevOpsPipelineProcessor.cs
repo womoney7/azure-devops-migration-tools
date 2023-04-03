@@ -252,8 +252,8 @@ namespace MigrationTools.Processors
         {
             var groupList = new List<IEnumerable<TaskGroup>>();
             sourceDefinitions.OrderBy(d => d.Version.Major);
-            var rootGroups = sourceDefinitions.Where(d => d.Version.Major == 1);
-            var updatedGroups = sourceDefinitions.Where(d => d.Version.Major > 1);
+            var rootGroups = sourceDefinitions.Where(d => d.Version?.Major == 1);
+            var updatedGroups = sourceDefinitions.Where(d => d.Version?.Major > 1);
             groupList.Add(rootGroups);
             groupList.Add(updatedGroups);
 
