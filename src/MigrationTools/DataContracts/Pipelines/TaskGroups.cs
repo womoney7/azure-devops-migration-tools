@@ -33,7 +33,7 @@ namespace MigrationTools.DataContracts.Pipelines
 
         public DateTimeOffset ModifiedOn { get; set; }
 
-        public Version Version { get; set; }
+        public override Version Version { get; set; }
 
         public string IconUrl { get; set; }
 

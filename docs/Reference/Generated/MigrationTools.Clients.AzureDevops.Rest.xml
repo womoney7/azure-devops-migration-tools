@@ -175,11 +175,11 @@
             <param name="targetDefinitions"></param>
             <returns>List of filtered Definitions</returns>
         </member>
-        <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.FilterOutIncompatibleBuildDefinitions(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.BuildDefinition},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskDefinition})">
+        <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.FilterOutIncompatibleBuildDefinitions(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.BuildDefinition},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskDefinition},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Mapping})">
             <summary>
             Filter incompatible TaskGroups
             </summary>
-            <param name="filteredTaskGroups"></param>
+            <param name="sourceDefinitions"></param>
             <param name="availableTasks"></param>
             <returns>List of filtered Definitions</returns>
         </member>
@@ -191,12 +191,21 @@
             <param name="targetDefinitions"></param>
             <returns>List of filtered Definitions</returns>
         </member>
-        <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.FilterOutIncompatibleTaskGroups(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskGroup},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskDefinition})">
+        <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.FilterOutSameTaskGroups(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskGroup},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskGroup})">
+            <summary>
+            Filter Same TaskGroups
+            </summary>
+            <param name="sourceDefinitions"></param>
+            <param name="targetDefinitions"></param>
+            <returns>List of filtered Definitions</returns>
+        </member>
+        <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.FilterOutIncompatibleTaskGroups(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskGroup},System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskDefinition},System.Collections.Generic.IEnumerable{System.Collections.Generic.KeyValuePair{System.String,MigrationTools.DataContracts.Pipelines.TaskGroup}})">
             <summary>
             Filter incompatible TaskGroups
             </summary>
             <param name="filteredTaskGroups"></param>
             <param name="availableTasks"></param>
+            <param name="sameTaskGroups"></param>
             <returns>List of filtered Definitions</returns>
         </member>
         <member name="M:MigrationTools.Processors.AzureDevOpsPipelineProcessor.SortDefinitionsByVersion(System.Collections.Generic.IEnumerable{MigrationTools.DataContracts.Pipelines.TaskGroup})">

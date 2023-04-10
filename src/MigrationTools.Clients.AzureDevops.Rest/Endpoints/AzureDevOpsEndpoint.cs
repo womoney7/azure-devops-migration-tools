@@ -12,12 +12,15 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
+
 using MigrationTools.DataContracts;
 using MigrationTools.DataContracts.Pipelines;
 using MigrationTools.DataContracts.Process;
 using MigrationTools.EndpointEnrichers;
+
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
+
 using static Microsoft.ApplicationInsights.MetricDimensionNames.TelemetryContext;
 
 namespace MigrationTools.Endpoints
@@ -129,7 +132,7 @@ namespace MigrationTools.Endpoints
             //    queryParts = string.Join("?", pathSplit.Skip(1)).TrimStart('?');
             //}
 
-            string unformatted = (apiPathAttribute.IncludeProject ? "/" +  Options.Project : "") + "/_apis/" + pathSplit[0] + (apiPathAttribute.IncludeTrailingSlash ? "/" : "");
+            string unformatted = (apiPathAttribute.IncludeProject ? "/" + Options.Project : "") + "/_apis/" + pathSplit[0] + (apiPathAttribute.IncludeTrailingSlash ? "/" : "");
             builder.Path += Regex.IsMatch(unformatted, @"{\d}") ? string.Format(unformatted, routeParameters) : unformatted;
 
             if (apiNameAttribute.Name == "Release Piplines")
@@ -262,7 +265,7 @@ namespace MigrationTools.Endpoints
             foreach (var definitionToBeMigrated in updatedDefinitions)
             {
                 var relatedRootDefinition = rootDefinitions.FirstOrDefault(d => definitionToBeMigrated.Name == d.Name);
-                var taskGroupId = rootDefinitions.FirstOrDefault(d => definitionToBeMigrated.Name == d.Name).Id;
+                var taskGroupId = rootDefinitions.FirstOrDefault(d => definitionToBeMigrated.Name == d.Name)?.Id;
                 definitionToBeMigrated.ParentDefinitionId = taskGroupId;
                 definitionToBeMigrated.Version.IsTest = true;
 
@@ -398,12 +401,15 @@ namespace MigrationTools.Endpoints
                 {
                     var targetObject = JsonConvert.DeserializeObject<DefinitionType>(responseContent);
                     definitionToBeMigrated.Id = targetObject.Id;
-                    migratedDefinitions.Add(new Mapping()
+                    var mapping = new Mapping()
                     {
                         Name = definitionToBeMigrated.Name,
                         SourceId = definitionToBeMigrated.GetSourceId(),
                         TargetId = targetObject.Id
-                    });
+                    };
+                    if (targetObject.Version != null)
+                        mapping.Version = targetObject.Version;
+                    migratedDefinitions.Add(mapping);
                 }
             }
             Log.LogInformation("{MigratedCount} of {TriedToMigrate} {DefinitionType}(s) got migrated..", migratedDefinitions.Count, definitionsToBeMigrated.Count(), typeof(DefinitionType).Name);
