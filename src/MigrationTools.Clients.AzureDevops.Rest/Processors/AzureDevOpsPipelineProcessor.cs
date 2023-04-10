@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualStudio.Services.Commerce;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.Common.Utility;
 
@@ -128,23 +129,26 @@ namespace MigrationTools.Processors
             var alreadyMigratedDefintions = targetDefinitions.Where(t => newMappings.Any(m => m.TargetId == t.Id) == false).ToList();
             foreach (var item in alreadyMigratedDefintions)
             {
-                var source = sourceDefinitions.FirstOrDefault(d => d.Name == item.Name);
-                if (source == null)
+                var source = sourceDefinitions.Where(d => d.Name == item.Name);
+                if (!source.Any())
                 {
                     Log.LogInformation("The {DefinitionType} {DefinitionName}({DefinitionId}) doesn't exsist in the source collection.", typeof(DefintionType).Name, item.Name, item.Id);
                 }
                 else
                 {
-                    alreadyMigratedMappings.Add(new()
+                    alreadyMigratedMappings.AddRange(source.Select(s => new Mapping()
                     {
-                        SourceId = source.Id,
+                        SourceId = s.Id,
                         TargetId = item.Id,
-                        Name = item.Name
-                    });
+                        Name = item.Name,
+                        Version = item.Version
+                    }).Distinct(new MappingEqualityComparer()));
                 }
             }
             return alreadyMigratedMappings;
         }
+
+
 
         /// <summary>
         /// Filter existing Definitions
@@ -166,10 +170,10 @@ namespace MigrationTools.Processors
         /// <summary>
         /// Filter incompatible TaskGroups
         /// </summary>
-        /// <param name="filteredTaskGroups"></param>
+        /// <param name="sourceDefinitions"></param>
         /// <param name="availableTasks"></param>
         /// <returns>List of filtered Definitions</returns>
-        private IEnumerable<BuildDefinition> FilterOutIncompatibleBuildDefinitions(IEnumerable<BuildDefinition> sourceDefinitions, IEnumerable<TaskDefinition> availableTasks)
+        private IEnumerable<BuildDefinition> FilterOutIncompatibleBuildDefinitions(IEnumerable<BuildDefinition> sourceDefinitions, IEnumerable<TaskDefinition> availableTasks, IEnumerable<Mapping> taskGroupMapping)
         {
             var objectsToMigrate = sourceDefinitions.Where(g =>
             {
@@ -180,6 +184,12 @@ namespace MigrationTools.Processors
                     {
                         return true;
                     }
+
+                    if (taskGroupMapping != null && taskGroupMapping.Any(a => a.SourceId == t.Task.Id))
+                    {
+                        return true;
+                    }
+
                     missingTasksNames.Add(t.DisplayName);
                     return false;
                 });
@@ -211,12 +221,28 @@ namespace MigrationTools.Processors
         }
 
         /// <summary>
+        /// Filter Same TaskGroups
+        /// </summary>
+        /// <param name="sourceDefinitions"></param>
+        /// <param name="targetDefinitions"></param>
+        /// <returns>List of filtered Definitions</returns>
+        private IEnumerable<KeyValuePair<string, TaskGroup>> FilterOutSameTaskGroups(IEnumerable<TaskGroup> sourceDefinitions, IEnumerable<TaskGroup> targetDefinitions)
+        {
+            var sameTaskGrups = from s in sourceDefinitions
+                                join t in targetDefinitions on s.Name equals t.Name
+                                select new KeyValuePair<string, TaskGroup>(s.Id, t);
+
+            return sameTaskGrups;
+        }
+
+        /// <summary>
         /// Filter incompatible TaskGroups
         /// </summary>
         /// <param name="filteredTaskGroups"></param>
         /// <param name="availableTasks"></param>
+        /// <param name="sameTaskGroups"></param>
         /// <returns>List of filtered Definitions</returns>
-        private IEnumerable<TaskGroup> FilterOutIncompatibleTaskGroups(IEnumerable<TaskGroup> filteredTaskGroups, IEnumerable<TaskDefinition> availableTasks)
+        private IEnumerable<TaskGroup> FilterOutIncompatibleTaskGroups(IEnumerable<TaskGroup> filteredTaskGroups, IEnumerable<TaskDefinition> availableTasks, IEnumerable<KeyValuePair<string, TaskGroup>> sameTaskGroups)
         {
             var objectsToMigrate = filteredTaskGroups.Where(g =>
             {
@@ -227,6 +253,12 @@ namespace MigrationTools.Processors
                     {
                         return true;
                     }
+
+                    if (sameTaskGroups.Any(p => p.Key == t.Task.Id))
+                    {
+                        return true;
+                    }
+
                     missingTasksNames.Add(t.DisplayName);
                     return false;
                 });
@@ -240,6 +272,7 @@ namespace MigrationTools.Processors
                 }
                 return true;
             });
+
             return objectsToMigrate;
         }
 
@@ -252,8 +285,8 @@ namespace MigrationTools.Processors
         {
             var groupList = new List<IEnumerable<TaskGroup>>();
             sourceDefinitions.OrderBy(d => d.Version.Major);
-            var rootGroups = sourceDefinitions.Where(d => d.Version?.Major == 1);
-            var updatedGroups = sourceDefinitions.Where(d => d.Version?.Major > 1);
+            var rootGroups = sourceDefinitions.Where(d => d.Id != null && d.Version.Major == 1);
+            var updatedGroups = sourceDefinitions.Where(d => d.Id != null && d.Version.Major > 1);
             groupList.Add(rootGroups);
             groupList.Add(updatedGroups);
 
@@ -304,11 +337,11 @@ namespace MigrationTools.Processors
             var sourceRepositories = await Source.GetApiDefinitionsAsync<GitRepository>(queryForDetails: false);
             var targetRepositories = await Target.GetApiDefinitionsAsync<GitRepository>(queryForDetails: false);
             var definitionsToBeMigrated = FilterOutExistingDefinitions(sourceDefinitions, targetDefinitions);
-            definitionsToBeMigrated = FilterOutIncompatibleBuildDefinitions(definitionsToBeMigrated, availableTasks).ToList();
+            definitionsToBeMigrated = FilterOutIncompatibleBuildDefinitions(definitionsToBeMigrated, availableTasks, TaskGroupMapping).ToList();
             definitionsToBeMigrated = FilterAwayIfAnyMapsAreMissing(definitionsToBeMigrated, TaskGroupMapping, VariableGroupMapping);
             //get target projects
-            //string projectName = Target.Options.Project.Trim();
-            //var targetProject = (await Target.GetApiDefinitionsAsync<Projects>()).FirstOrDefault(p => p.Name.Trim() == projectName);
+            string projectName = Target.Options.Project.Trim();
+            var targetProject = (await Target.GetApiDefinitionsAsync<Projects>()).FirstOrDefault(p => p.Name.Trim() == projectName);
 
             // Replace taskgroup and variablegroup sIds with tIds
             foreach (var definitionToBeMigrated in definitionsToBeMigrated)
@@ -318,15 +351,15 @@ namespace MigrationTools.Processors
                     .FirstOrDefault(c => c.Id == sourceConnectedServiceId)?.Name == s.Name)?.Id;
                 definitionToBeMigrated.Repository.Properties.ConnectedServiceId = targetConnectedServiceId;
 
-                //definitionToBeMigrated.Triggers?.ForEach(trigger =>
-                //{
-                //    var trig = trigger as IDictionary<string, object>;
-                //    if (trig.ContainsKey("definition"))
-                //    {
-                //        dynamic definition = trig["definition"];
-                //        definition.project = new { id = targetProject.Id, name = targetProject.Name };
-                //    }
-                //});
+                definitionToBeMigrated.Triggers?.ForEach(trigger =>
+                {
+                    var trig = trigger as IDictionary<string, object>;
+                    if (trig.ContainsKey("definition"))
+                    {
+                        dynamic definition = trig["definition"];
+                        definition.project = new { id = targetProject.Id, name = targetProject.Name };
+                    }
+                });
 
                 MapRepositoriesInBuidDefinition(sourceRepositories, targetRepositories, definitionToBeMigrated);
 
@@ -348,7 +381,55 @@ namespace MigrationTools.Processors
                             else
                             {
                                 step.Task.Id = mapping.TargetId;
+
+                                if (step.Task.VersionSpec.Split('.')[0] != mapping.Version.Major.ToString())
+                                {
+                                    step.Task.VersionSpec = $"{mapping.Version.Major}.*";
+                                }
                             }
+                        }
+                    }
+                }
+
+                if (sourceServiceConnections is not null && targetServiceConnections is not null)
+                {
+                    string[] inputNameWhichNeedsValueReplacement = { "subscription", "azuresubscription" };
+
+                    foreach (var phase in definitionToBeMigrated.Process.Phases)
+                    {
+                        foreach (var step in phase.Steps)
+                        {
+                            if (step.Inputs == null || !step.Inputs.Any())
+                            {
+                                continue;
+                            }
+                            bool hasFoundInputWhichNeedsReplacement = false;
+                            IDictionary<string, object> workflowTaskInputs = step.Inputs;
+
+                            if (workflowTaskInputs.ContainsKey("Subscription"))
+                            {
+                                string valueOfInputThatNeedsToBeMapped = workflowTaskInputs["Subscription"].ToString();
+                                var scMapping = targetServiceConnections.FirstOrDefault(sc => sc.Name.Trim() == sourceServiceConnections.FirstOrDefault(p => p.Id == valueOfInputThatNeedsToBeMapped)?.Name?.Trim());
+                                if (scMapping != null)
+                                    workflowTaskInputs["Subscription"] = scMapping.Id;
+                                else
+                                    workflowTaskInputs["Subscription"] = string.Empty;
+                                hasFoundInputWhichNeedsReplacement = true;
+                            }
+
+                            if (workflowTaskInputs.ContainsKey("subscription"))
+                            {
+                                string valueOfInputThatNeedsToBeMapped = workflowTaskInputs["subscription"].ToString();
+                                var scMapping = targetServiceConnections.FirstOrDefault(sc => sc.Name.Trim() == sourceServiceConnections.FirstOrDefault(p => p.Id == valueOfInputThatNeedsToBeMapped)?.Name?.Trim());
+                                if (scMapping != null)
+                                    workflowTaskInputs["subscription"] = scMapping.Id;
+                                else
+                                    workflowTaskInputs["subscription"] = string.Empty;
+                                hasFoundInputWhichNeedsReplacement = true;
+                            }
+
+                            if (hasFoundInputWhichNeedsReplacement)
+                                step.Inputs = (System.Dynamic.ExpandoObject)workflowTaskInputs;
                         }
                     }
                 }
@@ -357,7 +438,7 @@ namespace MigrationTools.Processors
                 {
                     foreach (var variableGroup in definitionToBeMigrated.VariableGroups)
                     {
-                        if (variableGroup != null)
+                        if (variableGroup == null)
                         {
                             continue;
                         }
@@ -539,6 +620,11 @@ namespace MigrationTools.Processors
                         else
                         {
                             WorkflowTask.TaskId = Guid.Parse(mapping.TargetId);
+                            //match target version 
+                            if (WorkflowTask.Version.Split('.')[0] != mapping.Version.Major.ToString() || WorkflowTask.Version.Split('.')[1].StartsWith("test"))
+                            {
+                                WorkflowTask.Version = $"{mapping.Version.Major}.*";
+                            }
                         }
                     }
                 }
@@ -576,27 +662,56 @@ namespace MigrationTools.Processors
                 {
                     foreach (var workflowTask in deployPhase.WorkflowTasks)
                     {
+                        if (!(bool)workflowTask.Inputs?.Any())
+                        {
+                            continue;
+                        }
+
                         bool hasFoundInputWhichNeedsReplacement = false;
-                        string inputNameWhichNeedsValueReplacement = "azureSubscription";
+                        string[] inputNameWhichNeedsValueReplacement = { "subscription", "azuresubscription" };
                         string valueOfInputThatNeedsToBeMapped = string.Empty;
 
-                        foreach (var input in workflowTask.Inputs)
+                        IDictionary<string, object> workflowTaskInputs = workflowTask.Inputs;
+                        if (workflowTaskInputs.ContainsKey("Subscription"))
                         {
-                            if (input.Key == inputNameWhichNeedsValueReplacement)
-                            {
-                                valueOfInputThatNeedsToBeMapped = input.Value.ToString();
-                                hasFoundInputWhichNeedsReplacement = true;
-                                break;
-                            }
+                            valueOfInputThatNeedsToBeMapped = workflowTaskInputs["Subscription"].ToString();
+                            Mapping scMapping = ServiceConnectionMappings.FirstOrDefault(sc => sc.SourceId == valueOfInputThatNeedsToBeMapped);
+                            if (scMapping != null)
+                                workflowTaskInputs["Subscription"] = scMapping.TargetId;
+                            else
+                                workflowTaskInputs.Remove("Subscription");
+
+                            hasFoundInputWhichNeedsReplacement = true;
+                        }
+
+                        if (workflowTaskInputs.ContainsKey("subscription"))
+                        {
+                            valueOfInputThatNeedsToBeMapped = workflowTaskInputs["subscription"].ToString();
+                            Mapping scMapping = ServiceConnectionMappings.FirstOrDefault(sc => sc.SourceId == valueOfInputThatNeedsToBeMapped);
+                            if (scMapping != null)
+                                workflowTaskInputs["subscription"] = scMapping.TargetId;
+                            else
+                                workflowTaskInputs.Remove("subscription");
+
+                            hasFoundInputWhichNeedsReplacement = true;
+                        }
+
+                        if (workflowTaskInputs.ContainsKey("azuresubscription"))
+                        {
+                            valueOfInputThatNeedsToBeMapped = workflowTaskInputs["azuresubscription"].ToString();
+                            Mapping scMapping = ServiceConnectionMappings.FirstOrDefault(sc => sc.SourceId == valueOfInputThatNeedsToBeMapped);
+                            if (scMapping != null)
+                                workflowTaskInputs["azuresubscription"] = scMapping.TargetId;
+                            else
+                                workflowTaskInputs.Remove("azuresubscription");
+
+                            hasFoundInputWhichNeedsReplacement = true;
                         }
 
                         if (hasFoundInputWhichNeedsReplacement)
                         {
-                            Mapping scMapping = ServiceConnectionMappings.FirstOrDefault(sc => sc.SourceId == valueOfInputThatNeedsToBeMapped);
-
-                            IDictionary<string, object> workflowTaskInputs = workflowTask.Inputs;
-                            workflowTaskInputs.Remove(inputNameWhichNeedsValueReplacement);
-                            workflowTaskInputs.Add(inputNameWhichNeedsValueReplacement, scMapping.TargetId);
+                            //workflowTaskInputs.Remove(inputNameWhichNeedsValueReplacement);
+                            //workflowTaskInputs.Add(inputNameWhichNeedsValueReplacement, scMapping.TargetId);
                             workflowTask.Inputs = (System.Dynamic.ExpandoObject)workflowTaskInputs;
                         }
                     }
@@ -646,19 +761,42 @@ namespace MigrationTools.Processors
             var sourceDefinitions = await Source.GetApiDefinitionsAsync<TaskGroup>(queryForDetails: false);
             var targetDefinitions = await Target.GetApiDefinitionsAsync<TaskGroup>(queryForDetails: false);
             var availableTasks = await Target.GetApiDefinitionsAsync<TaskDefinition>(queryForDetails: false);
+
+            var sameTaskGroups = FilterOutSameTaskGroups(sourceDefinitions, targetDefinitions);
             var filteredTaskGroups = FilterOutExistingTaskGroups(sourceDefinitions, targetDefinitions);
-            filteredTaskGroups = FilterOutIncompatibleTaskGroups(filteredTaskGroups, availableTasks).ToList();
+
+            filteredTaskGroups = FilterOutIncompatibleTaskGroups(filteredTaskGroups, availableTasks, sameTaskGroups).ToList();
+
+            filteredTaskGroups.ForEach(g =>
+            {
+                g.Tasks.ForEach(t =>
+                {
+                    if (sameTaskGroups.Any(p => p.Key == t.Task.Id))
+                    {
+                        var tg = sameTaskGroups.FirstOrDefault(p => p.Key == t.Task.Id).Value;
+                        t.Task.Id = tg.Id;
+
+                        if (t.Task.VersionSpec.Split('.')[0] != tg.Version.Major.ToString())
+                        {
+                            t.Task.VersionSpec = $"{tg.Version.Major}.*";
+                        }
+
+                    }
+
+                });
+
+            });
 
             var rootSourceDefinitions = SortDefinitionsByVersion(filteredTaskGroups).First();
             var updatedSourceDefinitions = SortDefinitionsByVersion(filteredTaskGroups).Last();
 
             var mappings = await Target.CreateApiDefinitionsAsync(rootSourceDefinitions);
 
-            targetDefinitions = await Target.GetApiDefinitionsAsync<TaskGroup>();
+            targetDefinitions = await Target.GetApiDefinitionsAsync<TaskGroup>(queryForDetails: false);
             var rootTargetDefinitions = SortDefinitionsByVersion(targetDefinitions).First();
             await Target.UpdateTaskGroupsAsync(targetDefinitions, rootTargetDefinitions, updatedSourceDefinitions);
 
-            targetDefinitions = await Target.GetApiDefinitionsAsync<TaskGroup>();
+            targetDefinitions = await Target.GetApiDefinitionsAsync<TaskGroup>(queryForDetails: false);
             mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions.Where(d => d.Name != null), mappings));
             return mappings;
         }
@@ -692,8 +830,8 @@ namespace MigrationTools.Processors
         {
             Log.LogInformation($"Processing Agent Pools..");
 
-            var sourceDefinitions = await Source.GetApiDefinitionsAsync<AgentPool>();
-            var targetDefinitions = await Target.GetApiDefinitionsAsync<AgentPool>();
+            var sourceDefinitions = await Source.GetApiDefinitionsAsync<AgentPool>(queryForDetails: false);
+            var targetDefinitions = await Target.GetApiDefinitionsAsync<AgentPool>(queryForDetails: false);
 
             sourceDefinitions = sourceDefinitions.Where(p => p.AgentCloudId != 1);
 
@@ -703,6 +841,19 @@ namespace MigrationTools.Processors
             var mappings = await Target.CreateApiDefinitionsAsync(definitionsToBeMigrated);
             mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
             return mappings;
+        }
+    }
+
+    class MappingEqualityComparer : IEqualityComparer<Mapping>
+    {
+        public bool Equals(Mapping x, Mapping y)
+        {
+           return (x?.Name?.Trim() == y?.Name?.Trim()) && ( x?.SourceId == y?.SourceId) && (x?.TargetId == y?.TargetId);
+        }
+
+        public int GetHashCode(Mapping obj)
+        {
+            return obj.GetHashCode();
         }
     }
 }

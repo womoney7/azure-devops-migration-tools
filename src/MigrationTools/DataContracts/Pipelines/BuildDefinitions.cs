@@ -81,7 +81,7 @@ namespace MigrationTools.DataContracts.Pipelines
             Id = null;
             Project = null;
 
-            if (q_name != string.Empty && !q_name.StartsWith("Hosted")) 
+            if (!string.IsNullOrEmpty(q_name) && !q_name.StartsWith("Hosted"))
             {
                 Queue = new Queue();
                 Queue.Name = q_name;
@@ -336,7 +336,7 @@ namespace MigrationTools.DataContracts.Pipelines
 
         public string DefaultBranch { get; set; }
 
-        public bool? Clean { get; set; }
+        public string Clean { get; set; }
 
         public bool CheckoutSubmodules { get; set; }
     }

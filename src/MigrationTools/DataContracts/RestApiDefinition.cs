@@ -1,4 +1,7 @@
 ﻿using System.Collections.Generic;
+using System.Runtime.Serialization;
+
+using MigrationTools.DataContracts.Pipelines;
 
 namespace MigrationTools.DataContracts
 {
@@ -7,6 +10,9 @@ namespace MigrationTools.DataContracts
         private string sId;
         public virtual string Name { get; set; }
         public virtual string Id { get; set; }
+
+        [DataMember(EmitDefaultValue = false)]
+        public virtual Version Version { get; set; }
 
         public string GetSourceId()
         {
