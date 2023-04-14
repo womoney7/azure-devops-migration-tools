@@ -264,6 +264,11 @@
             List of Release Pipelines to process. If this is `null` then all Release Pipelines will be processed.
             </summary>
         </member>
+        <member name="P:MigrationTools.Processors.AzureDevOpsPipelineProcessorOptions.QueueBuildPipelines">
+            <summary>
+            List of Build Pipelines to queue.
+            </summary>
+        </member>
         <member name="P:MigrationTools.Processors.AzureDevOpsPipelineProcessorOptions.RepositoryNameMaps">
             <summary>
             Map of Source Repository to Target Repository Names 

@@ -47,6 +47,11 @@ namespace MigrationTools.Processors
         public List<string> ReleasePipelines { get; set; }
 
         /// <summary>
+        /// List of Build Pipelines to queue.
+        /// </summary>
+        public List<string> QueueBuildPipelines { get; set; }
+
+        /// <summary>
         /// Map of Source Repository to Target Repository Names 
         /// </summary>
         public Dictionary<string, string> RepositoryNameMaps { get; set; } //Can we reuse GitRepoMapping?

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Dynamic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -14,6 +15,8 @@ using MigrationTools.DataContracts;
 using MigrationTools.DataContracts.Pipelines;
 using MigrationTools.Endpoints;
 using MigrationTools.Enrichers;
+
+using Newtonsoft.Json;
 
 namespace MigrationTools.Processors
 {
@@ -107,6 +110,12 @@ namespace MigrationTools.Processors
             {
                 await CreateReleasePipelinesAsync(taskGroupMappings, variableGroupMappings, serviceConnectionMappings);
             }
+
+            if (_Options.QueueBuildPipelines != null)
+            {
+                await QueueBuildPipelinesAsync();
+            }
+
             stopwatch.Stop();
             Log.LogDebug("DONE in {Elapsed} ", stopwatch.Elapsed.ToString("c"));
         }
@@ -285,8 +294,8 @@ namespace MigrationTools.Processors
         {
             var groupList = new List<IEnumerable<TaskGroup>>();
             sourceDefinitions.OrderBy(d => d.Version.Major);
-            var rootGroups = sourceDefinitions.Where(d => d.Id != null && d.Version.Major == 1);
-            var updatedGroups = sourceDefinitions.Where(d => d.Id != null && d.Version.Major > 1);
+            var rootGroups = sourceDefinitions.Where(d => d.Version.Major == 1);
+            var updatedGroups = sourceDefinitions.Where(d => d.Version.Major > 1);
             groupList.Add(rootGroups);
             groupList.Add(updatedGroups);
 
@@ -476,6 +485,23 @@ namespace MigrationTools.Processors
             definitionToBeMigrated.Repository.Id = targetRepoId;
         }
 
+        private void MapRepositoriesInBuid(IEnumerable<GitRepository> sourceRepositories, IEnumerable<GitRepository> targetRepositories, Builds definitionToBeMigrated)
+        {
+            var sourceRepoId = definitionToBeMigrated.Repository.Id;
+            string sourceRepositoryName = sourceRepositories.FirstOrDefault(s => s.Id == sourceRepoId)?.Name ?? string.Empty;
+            string targetRepoId;
+
+            if (_Options.RepositoryNameMaps.ContainsKey(sourceRepositoryName))  //Map repository name if configured
+            {
+                targetRepoId = targetRepositories.FirstOrDefault(r => _Options.RepositoryNameMaps[sourceRepositoryName] == r.Name)?.Id;
+            }
+            else
+            {
+                targetRepoId = targetRepositories.FirstOrDefault(r => sourceRepositoryName == r.Name)?.Id;
+            }
+            definitionToBeMigrated.Repository.Id = targetRepoId;
+        }
+
         private async Task<IEnumerable<Mapping>> CreatePoolMappingsAsync<DefinitionType>()
             where DefinitionType : RestApiDefinition, new()
         {
@@ -548,6 +574,79 @@ namespace MigrationTools.Processors
             mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
             return mappings;
         }
+
+        private async Task<IEnumerable<Mapping>> QueueBuildPipelinesAsync(IEnumerable<Mapping> buildPipelinesMappings = null)
+        {
+            Log.LogInformation("Queue Build Pipelines..");
+            List<Mapping> mappings = new List<Mapping>();
+            var sourceDefinitions = await GetSelectedDefinitionsFromEndpointAsync<BuildDefinition>(Source, _Options.QueueBuildPipelines);
+            var targetDefinitions = await GetSelectedDefinitionsFromEndpointAsync<BuildDefinition>(Target, _Options.QueueBuildPipelines);
+
+            //var sourceServiceConnections = await Source.GetApiDefinitionsAsync<ServiceConnection>();
+            //var targetServiceConnections = await Target.GetApiDefinitionsAsync<ServiceConnection>();
+            var sourceRepositories = await Source.GetApiDefinitionsAsync<GitRepository>(queryForDetails: false);
+            var targetRepositories = await Target.GetApiDefinitionsAsync<GitRepository>(queryForDetails: false);
+
+
+            //get target projects
+            string projectName = Target.Options.Project.Trim();
+            var targetProject = (await Target.GetApiDefinitionsAsync<Projects>()).FirstOrDefault(p => p.Name.Trim() == projectName);
+
+            foreach (var defini in sourceDefinitions)
+            {
+                var targetDefinition = targetDefinitions.Where(p => p.Name == defini.Name).FirstOrDefault();
+                if (targetDefinition == null)
+                {
+                    Log.LogWarning("Can't find buildPipeline {buildPipelineName} in the target collection.", defini.Name);
+                    continue;
+                }
+
+                var sourceBuilds = await Source.GetApiDefinitionsAsync<Builds>(queryString: $"definitions={defini.Id}&statusFilter=completed&resultFilter=succeeded");
+                var targetBuilds = await Target.GetApiDefinitionsAsync<Builds>(queryString: $"definitions={targetDefinition.Id}&statusFilter=completed&resultFilter=succeeded");
+                var definitionsToBeMigrated = FilterOutExistingDefinitions(sourceBuilds, targetBuilds)
+                    .OrderBy(p => p.StartTime);
+
+                foreach (var definitionToBeMigrated in definitionsToBeMigrated)
+                {
+                    definitionToBeMigrated.Definition.Id = targetDefinition.Id;
+                    definitionToBeMigrated.Definition.Revision = targetDefinition.Revision;
+                    definitionToBeMigrated.Definition.Project.Id = targetProject.Id;
+                    definitionToBeMigrated.Project.Id = targetProject.Id;
+
+                    var sourceArtifactList = await Source.GetApiDefinitionsAsync<BuildArtifacts>(routeParameters: new string[] { definitionToBeMigrated.Id }, queryForDetails: false);
+                    string downloadArtifacts = "";
+                    if (sourceArtifactList.Any())
+                    {
+                        downloadArtifacts = sourceArtifactList?.Select(p => p.Resource.DownloadUrl).Aggregate("",
+                            (c, s) =>
+                            {
+                                c += $"- {s}\n";
+                                return c;
+                            });
+                        downloadArtifacts = downloadArtifacts.Remove(downloadArtifacts.LastIndexOf("\n"));
+                    }
+
+                    dynamic param = new
+                    {
+                        BuildNumber = definitionToBeMigrated.BuildNumber,
+                        GlobalDevOpsAccessToken = Source.Options.AccessToken,
+                        //DownloadArtifactURL = string.Join("- ", sourceArtifactList?.Select(p => p.Resource.DownloadUrl))
+                        DownloadArtifactURL = downloadArtifacts
+                    };
+                    definitionToBeMigrated.TemplateParameters = param;
+
+                    MapRepositoriesInBuid(sourceRepositories, targetRepositories, definitionToBeMigrated);
+
+                }
+                mappings = await Target.CreateApiDefinitionsAsync<Builds>(definitionsToBeMigrated.ToList());
+                mappings.AddRange(FindExistingMappings(sourceDefinitions, targetDefinitions, mappings));
+
+            }
+
+            return mappings;
+
+        }
+
 
         private IEnumerable<DefinitionType> FilterAwayIfAnyMapsAreMissing<DefinitionType>(
                                                 IEnumerable<DefinitionType> definitionsToBeMigrated,
@@ -848,7 +947,7 @@ namespace MigrationTools.Processors
     {
         public bool Equals(Mapping x, Mapping y)
         {
-           return (x?.Name?.Trim() == y?.Name?.Trim()) && ( x?.SourceId == y?.SourceId) && (x?.TargetId == y?.TargetId);
+            return (x?.Name?.Trim() == y?.Name?.Trim()) && (x?.SourceId == y?.SourceId) && (x?.TargetId == y?.TargetId);
         }
 
         public int GetHashCode(Mapping obj)
