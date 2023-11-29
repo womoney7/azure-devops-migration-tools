@@ -26,6 +26,8 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="7.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="7.0.1" />
     <PackageReference Include="Microsoft.IdentityModel.Clients.ActiveDirectory" Version="5.3.0" />
+    <PackageReference Include="Microsoft.TeamFoundation.DistributedTask.WebApi" Version="16.205.1" />
+    <PackageReference Include="Microsoft.TeamFoundationServer.Client" Version="16.205.1" />
     <PackageReference Include="Microsoft.VisualStudio.Services.Client" Version="16.205.1" />
     <PackageReference Include="Microsoft.VisualStudio.Services.ServiceEndpoints.WebApi" Version="16.205.1" />
     <PackageReference Include="Serilog" Version="3.1.0" />
