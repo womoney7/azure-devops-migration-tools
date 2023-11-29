@@ -81,7 +81,7 @@ namespace MigrationTools.DataContracts.Pipelines
             Id = null;
             Project = null;
 
-            if (!string.IsNullOrEmpty(q_name) && !q_name.StartsWith("Hosted"))
+            if (!string.IsNullOrEmpty(q_name) && !q_name.StartsWith("Hosted") && !q_name.Equals("Azure Pipelines",StringComparison.CurrentCultureIgnoreCase))
             {
                 Queue = new Queue();
                 Queue.Name = q_name;
