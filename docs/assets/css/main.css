@@ -15,7 +15,6 @@
     background-color: #43464c;
 }
 
-.highlighter-coderay
-{
-    
+pre {
+    max-width: 1024px;;
 }

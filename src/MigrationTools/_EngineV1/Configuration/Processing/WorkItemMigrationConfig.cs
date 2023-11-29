@@ -157,12 +157,6 @@ namespace MigrationTools._EngineV1.Configuration.Processing
         public bool UseCommonNodeStructureEnricherConfig { get; set; }
 
         /// <summary>
-        /// 
-        /// </summary>
-        /// <default>?</default>
-        public bool StopMigrationOnMissingAreaIterationNodes { get; set; }
-
-        /// <summary>
         /// The root paths of the Ares / Iterations you want migrate. See [NodeBasePath Configuration](#nodebasepath-configuration)
         /// </summary>
         /// <default>["/"]</default>
@@ -199,6 +193,12 @@ namespace MigrationTools._EngineV1.Configuration.Processing
         /// </summary>
         public bool SkipRevisionWithInvalidAreaPath { get; set; }
 
+        /// <summary>
+        /// When set to True the susyem will try to create any missing missing area or iteration paths from the revisions.
+        /// </summary>
+       public bool ShouldCreateMissingRevisionPaths { get; set; }
+        public bool ShouldCreateNodesUpFront { get; set; }  // FLAG for Expermiment to Do on Demand.
+
         /// <inheritdoc />
         public bool IsProcessorCompatible(IReadOnlyList<IProcessorConfig> otherProcessors)
         {
@@ -222,9 +222,7 @@ namespace MigrationTools._EngineV1.Configuration.Processing
             UpdateCreatedBy = true;
             PrefixProjectToNodes = false;
             UpdateCreatedDate = true;
-            SkipToFinalRevisedWorkItemType = true;
-            StopMigrationOnMissingAreaIterationNodes = true;
-
+            SkipToFinalRevisedWorkItemType = false;
             LinkMigrationSaveEachAsAdded = false;
             GenerateMigrationComment = true;
             WIQLQueryBit = @"AND  [Microsoft.VSTS.Common.ClosedDate] = '' AND [System.WorkItemType] NOT IN ('Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request')";
@@ -236,6 +234,8 @@ namespace MigrationTools._EngineV1.Configuration.Processing
             MaxGracefulFailures = 0;
             SkipRevisionWithInvalidIterationPath = false;
             SkipRevisionWithInvalidAreaPath = false;
+            ShouldCreateMissingRevisionPaths = true;
+            ShouldCreateNodesUpFront = true;
         }
     }
 }

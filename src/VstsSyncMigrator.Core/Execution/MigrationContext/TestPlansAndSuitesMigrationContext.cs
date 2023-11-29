@@ -4,18 +4,24 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.TeamFoundation.Framework.Client;
 using Microsoft.TeamFoundation.Framework.Common;
 using Microsoft.TeamFoundation.TestManagement.Client;
+using Microsoft.VisualStudio.Services.Client;
+using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.TestManagement.TestPlanning.WebApi;
+using Microsoft.VisualStudio.Services.WebApi;
 using MigrationTools;
 using MigrationTools._EngineV1.Clients;
 using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.Configuration.Processing;
 using MigrationTools._EngineV1.Processors;
 using MigrationTools.DataContracts;
+using MigrationTools.DataContracts.Pipelines;
 using MigrationTools.Enrichers;
 using VstsSyncMigrator.Engine.ComponentContext;
 
@@ -518,7 +524,29 @@ namespace VstsSyncMigrator.Engine
             IRequirementTestSuite targetSuiteChild;
             try
             {
-                targetSuiteChild = _targetTestStore.Project.TestSuites.CreateRequirement(requirement.ToWorkItem());
+                string token = Engine.Target.Config.AsTeamProjectConfig().PersonalAccessToken;
+                string project = Engine.Target.Config.AsTeamProjectConfig().Project;
+                Uri collectionUri = Engine.Target.Config.AsTeamProjectConfig().Collection;
+                VssConnection connection = new VssConnection(collectionUri, new VssClientCredentials());
+                if (!string.IsNullOrEmpty(token)) connection = new VssConnection(collectionUri, new VssBasicCredential(string.Empty, token));
+                TestPlanHttpClient testPlanHttpClient = connection.GetClient<TestPlanHttpClient>();
+                WorkItemData sourceSuite = Engine.Source.WorkItems.GetWorkItem(source.Parent.Id);
+                WorkItemData targetSuite = Engine.Target.WorkItems.FindReflectedWorkItemByReflectedWorkItemId(sourceSuite);
+                WorkItemData sourcePlan = Engine.Source.WorkItems.GetWorkItem(source.Plan.Id);
+                WorkItemData targetPlan = Engine.Target.WorkItems.FindReflectedWorkItemByReflectedWorkItemId(sourcePlan);
+                TestSuiteCreateParams testSuiteCreateParams = new TestSuiteCreateParams()
+                {
+                    RequirementId = int.Parse(requirement.Id),
+                    SuiteType = Microsoft.VisualStudio.Services.TestManagement.TestPlanning.WebApi.TestSuiteType.RequirementTestSuite,
+                    ParentSuite = new TestSuiteReference()
+                    {
+                        Id = int.Parse(targetSuite.Id)
+                    }
+                };
+                TestSuite suite = testPlanHttpClient.CreateTestSuiteAsync(testSuiteCreateParams, project, int.Parse(targetPlan.Id)).Result;
+                targetSuiteChild = (IRequirementTestSuite)_targetTestStore.Project.TestSuites.Find(suite.Id);
+                //Replaced soap api with rest api because work item type Bug is no longer part of the Microsoft.Requirement.Category
+                //targetSuiteChild = _targetTestStore.Project.TestSuites.CreateRequirement(requirement.ToWorkItem());
             }
             catch (TestManagementValidationException ex)
             {
@@ -579,12 +607,36 @@ namespace VstsSyncMigrator.Engine
 
         private ITestSuiteBase FindSuiteEntry(IStaticTestSuite staticSuite, string titleToFind)
         {
-            return (from s in staticSuite.SubSuites where s.Title == titleToFind select s).SingleOrDefault();
+            ITestSuiteBase testSuit = (from s in staticSuite.SubSuites where s.Title == titleToFind select s).SingleOrDefault();
+            if (testSuit != null)
+            {
+                //Check test suit is in fact the right one
+                var sourceWI = Engine.Source.WorkItems.GetWorkItem(testSuit.Id.ToString());
+                string expectedReflectedId = Engine.Source.WorkItems.CreateReflectedWorkItemId(sourceWI).ToString();
+                string workItemReflectedId = (string)sourceWI.Fields[Engine.Target.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName].Value;
+                if (workItemReflectedId != expectedReflectedId)
+                {
+                    testSuit = null;
+                }
+            }
+            return testSuit;
         }
 
         private ITestPlan FindTestPlan(TestManagementContext tmc, string name)
         {
-            return (from p in tmc.Project.TestPlans.Query("Select * From TestPlan") where p.Name == name select p).SingleOrDefault();
+            ITestPlan testPlan = (from p in tmc.Project.TestPlans.Query("Select * From TestPlan") where p.Name == name select p).SingleOrDefault();
+            if (testPlan != null)
+            {
+                //Check test plan is in fact the right one
+                var sourceWI = Engine.Source.WorkItems.GetWorkItem(testPlan.Id.ToString());
+                string expectedReflectedId = Engine.Source.WorkItems.CreateReflectedWorkItemId(sourceWI).ToString();
+                string workItemReflectedId = (string)sourceWI.Fields[Engine.Target.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName].Value;
+                if (workItemReflectedId != expectedReflectedId)
+                {
+                    testPlan = null;
+                }
+            }
+            return testPlan;
         }
 
         private void FixAssignedToValue(int sourceWIId, int targetWIId)
@@ -656,7 +708,7 @@ namespace VstsSyncMigrator.Engine
         private void FixWorkItemIdInQuery(ITestSuiteBase targetSuitChild)
         {
             var targetPlan = targetSuitChild.Plan;
-            if (targetSuitChild.TestSuiteType == TestSuiteType.DynamicTestSuite)
+            if (targetSuitChild.TestSuiteType == Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.DynamicTestSuite)
             {
                 var dynamic = (IDynamicTestSuite)targetSuitChild;
 
@@ -777,7 +829,7 @@ namespace VstsSyncMigrator.Engine
         private bool HasChildSuites(ITestSuiteBase sourceSuite)
         {
             bool hasChildren = false;
-            if (sourceSuite != null && sourceSuite.TestSuiteType == TestSuiteType.StaticTestSuite)
+            if (sourceSuite != null && sourceSuite.TestSuiteType == Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.StaticTestSuite)
             {
                 hasChildren = (((IStaticTestSuite)sourceSuite).Entries.Count > 0);
             }
@@ -896,18 +948,18 @@ namespace VstsSyncMigrator.Engine
             {
                 switch (sourceSuite.TestSuiteType)
                 {
-                    case TestSuiteType.None:
+                    case Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.None:
                         throw new NotImplementedException();
                     //break;
-                    case TestSuiteType.DynamicTestSuite:
+                    case Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.DynamicTestSuite:
                         targetSuiteChild = CreateNewDynamicTestSuite(sourceSuite);
                         break;
 
-                    case TestSuiteType.StaticTestSuite:
+                    case Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.StaticTestSuite:
                         targetSuiteChild = CreateNewStaticTestSuite(sourceSuite);
                         break;
 
-                    case TestSuiteType.RequirementTestSuite:
+                    case Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.RequirementTestSuite:
                         int sourceRid = ((IRequirementTestSuite)sourceSuite).RequirementId;
                         WorkItemData sourceReq = null;
                         WorkItemData targetReq = null;
@@ -974,7 +1026,7 @@ namespace VstsSyncMigrator.Engine
             }
 
             // Recurse if Static Suite
-            if (sourceSuite.TestSuiteType == TestSuiteType.StaticTestSuite && targetSuiteChild != null)
+            if (sourceSuite.TestSuiteType == Microsoft.TeamFoundation.TestManagement.Client.TestSuiteType.StaticTestSuite && targetSuiteChild != null)
             {
                 // Add Test Cases
                 AddChildTestCases(sourceSuite, targetSuiteChild, targetPlan);

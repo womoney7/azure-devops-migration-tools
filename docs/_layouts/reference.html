@@ -1,0 +1,59 @@
+---
+layout: default
+---
+<div>
+    <h1>{{ page.className }}</h1>
+</div>
+<div class="d-flex">
+    <p>Ref</p>
+    <span>&nbsp;<i class="fa-solid fa-pipe"></i>&nbsp;</span>
+    <p>{{ content | reading_time_as_i }} to read</p>
+    <span>&nbsp;<i class="fa-solid fa-pipe"></i>&nbsp;</span>
+    <p>{{ page.last_modified_at }}</p>
+</div>
+<div class="">
+    {% include article-alert.html %}
+
+
+    <p>{{ page.description | markdownify }}</p>
+
+    {% assign mdInfo = page.topics | where: "topic", "introduction" | last %}
+    <p>{{ mdInfo.markdown | markdownify }}</p>
+    
+    <h2>Options</h2>
+    <div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <tr>
+            <td>Parameter name</td>
+            <td>Type</td>
+            <td>Description</td>
+            <td>Default Value</td>
+        </tr>
+    {% assign options = page.options %}
+    {% for option in options %}
+        <tr>
+            <td>{{option.parameterName}}</td>
+            <td>{{option.type}}</td>
+            <td>{{option.description}}</td>
+            <td>{{option.defaultValue}}</td>
+        </tr>
+    {% endfor %}
+</table>
+</div>
+
+<h2>Example</h2>
+<p>A basic sample for {{ page.className }} configuration.</p>
+    {% assign sample = page.configurationSamples | where: "name", "default" | last %}
+
+{% highlight json linenos %}
+{{sample.code}}
+{% endhighlight %}
+
+{% assign mdInfo = page.topics | where: "topic", "notes" | last %}
+    <p>{{ mdInfo.markdown | markdownify }}</p>
+
+    {{ content | inject_anchors }}
+
+
+
+</div>

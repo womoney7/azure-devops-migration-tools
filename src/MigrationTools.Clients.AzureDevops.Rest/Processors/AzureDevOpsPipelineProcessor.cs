@@ -103,7 +103,7 @@ namespace MigrationTools.Processors
             if (_Options.MigrateBuildPipelines)
             {
                 await CreateAgentPoolsAsync();
-                await CreateBuildPipelinesAsync(taskGroupMappings, variableGroupMappings);
+                await CreateBuildPipelinesAsync(taskGroupMappings, variableGroupMappings, serviceConnectionMappings);
             }
 
             if (_Options.MigrateReleasePipelines)
@@ -189,7 +189,7 @@ namespace MigrationTools.Processors
                 var missingTasksNames = new List<string>();
                 var allTasksAreAvailable = g.Process.Phases.Select(p => p.Steps).SelectMany(s => s).All(t =>
                 {
-                    if (availableTasks.Any(a => a.Id == t.Task.Id))
+                    if (availableTasks.Any(a => a.Id == t.Task.Id) || taskGroupMapping.Any(m => m.SourceId == t.Task.Id))
                     {
                         return true;
                     }
@@ -334,7 +334,7 @@ namespace MigrationTools.Processors
                 .ToList();
         }
 
-        private async Task<IEnumerable<Mapping>> CreateBuildPipelinesAsync(IEnumerable<Mapping> TaskGroupMapping = null, IEnumerable<Mapping> VariableGroupMapping = null)
+        private async Task<IEnumerable<Mapping>> CreateBuildPipelinesAsync(IEnumerable<Mapping> TaskGroupMapping = null, IEnumerable<Mapping> VariableGroupMapping = null, IEnumerable<Mapping> serviceConnectionMappings = null)
         {
             Log.LogInformation("Processing Build Pipelines..");
 
@@ -459,6 +459,31 @@ namespace MigrationTools.Processors
                         else
                         {
                             variableGroup.Id = mapping.TargetId;
+                        }
+                    }
+                }
+
+                if (serviceConnectionMappings is not null)
+                {
+                    foreach (var phase in definitionToBeMigrated.Process.Phases)
+                    {
+                        foreach (var step in phase.Steps)
+                        {
+                            var newInputs = new Dictionary<string, object>();
+                            foreach (var input in (IDictionary<String, Object>)step.Inputs)
+                            {
+                                var mapping = serviceConnectionMappings.FirstOrDefault(d => d.SourceId == input.Value.ToString());
+                                if (mapping != null)
+                                {
+                                    newInputs.Add(input.Key, mapping.TargetId);
+                                }
+                            }
+
+                            foreach (var input in newInputs)
+                            {
+                                ((IDictionary<String, Object>)step.Inputs).Remove(input.Key);
+                                ((IDictionary<String, Object>)step.Inputs).Add(input.Key, input.Value);
+                            }
                         }
                     }
                 }
@@ -719,7 +744,7 @@ namespace MigrationTools.Processors
                         else
                         {
                             WorkflowTask.TaskId = Guid.Parse(mapping.TargetId);
-                            //match target version 
+                            //match target version
                             if (WorkflowTask.Version.Split('.')[0] != mapping.Version.Major.ToString() || WorkflowTask.Version.Split('.')[1].StartsWith("test"))
                             {
                                 WorkflowTask.Version = $"{mapping.Version.Major}.*";

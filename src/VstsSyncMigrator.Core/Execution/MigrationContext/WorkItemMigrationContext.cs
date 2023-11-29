@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -11,8 +12,14 @@ using Microsoft.ApplicationInsights.DataContracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.TeamFoundation.Common;
 using Microsoft.TeamFoundation.WorkItemTracking.Client;
 using Microsoft.TeamFoundation.WorkItemTracking.Proxy;
+using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
+using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.WebApi;
+using Microsoft.VisualStudio.Services.WebApi.Patch;
+using Microsoft.VisualStudio.Services.WebApi.Patch.Json;
 using MigrationTools;
 using MigrationTools._EngineV1.Clients;
 using MigrationTools._EngineV1.Configuration;
@@ -23,6 +30,7 @@ using MigrationTools._EngineV1.Processors;
 using MigrationTools.DataContracts;
 using MigrationTools.Enrichers;
 using MigrationTools.ProcessorEnrichers;
+using Newtonsoft.Json.Linq;
 using Serilog.Context;
 using Serilog.Events;
 using ILogger = Serilog.ILogger;
@@ -106,7 +114,9 @@ namespace VstsSyncMigrator.Engine
                     PrefixProjectToNodes = _config.PrefixProjectToNodes,
                     AreaMaps = _config.AreaMaps ?? new Dictionary<string, string>(),
                     IterationMaps = _config.IterationMaps ?? new Dictionary<string, string>(),
-                });
+                    ShouldCreateMissingRevisionPaths = _config.ShouldCreateMissingRevisionPaths,
+                    ShouldCreateNodesUpFront = _config.ShouldCreateNodesUpFront
+                }); ;
             }
 
             _revisionManager.Configure(new TfsRevisionManagerOptions() { Enabled = true, MaxRevisions = _config.MaxRevisions, ReplayRevisions = _config.ReplayRevisions });
@@ -133,11 +143,14 @@ namespace VstsSyncMigrator.Engine
             {
                 throw new Exception("You must call Configure() first");
             }
-
+            //////////////////////////////////////////////////
+            ValidatePatTokenRequirement();
+            //////////////////////////////////////////////////
             var workItemServer = Engine.Source.GetService<WorkItemServer>();
             attachmentEnricher = new TfsAttachmentEnricher(workItemServer, _config.AttachmentWorkingPath, _config.AttachmentMaxSize);
             embededImagesEnricher = Services.GetRequiredService<TfsEmbededImagesEnricher>();
             gitRepositoryEnricher = Services.GetRequiredService<TfsGitRepositoryEnricher>();
+
 
             _nodeStructureEnricher.ProcessorExecutionBegin(null);
 
@@ -160,16 +173,16 @@ namespace VstsSyncMigrator.Engine
                 contextLog.Information("Replay all revisions of {sourceWorkItemsCount} work items?",
                     sourceWorkItems.Count);
 
+
+
                 //////////////////////////////////////////////////
                 contextLog.Information("ValidateTargetNodesExist::Checking all Nodes on Work items");
-                if (!_nodeStructureEnricher.ValidateTargetNodesExist(sourceWorkItems))
+                List<NodeStructureItem> nodeStructureMissingItems = _nodeStructureEnricher.GetMissingRevisionNodes(sourceWorkItems);
+                if (_nodeStructureEnricher.ValidateTargetNodesExist(nodeStructureMissingItems))
                 {
-                    contextLog.Debug("ValidateTargetNodesExist::StopMigrationOnMissingAreaIterationNodes:{StopMigrationOnMissingAreaIterationNodes}", _config.StopMigrationOnMissingAreaIterationNodes);
-                    if (_config.StopMigrationOnMissingAreaIterationNodes)
-                    {
-                        throw new Exception("Missing Iterations in Target preventing progress, check log for list. If you resolve with a FieldMap set StopMigrationOnMissingAreaIterationNodes = false in the config to continue.");
-                    }
+                    throw new Exception("Missing Iterations in Target preventing progress, check log for list. To continue you MUST configure IterationMaps or AreaMaps that matches the missing paths..");
                 }
+
                 //////////////////////////////////////////////////
                 contextLog.Information("Found target project as {@destProject}", Engine.Target.WorkItems.Project.Name);
                 //////////////////////////////////////////////////////////FilterCompletedByQuery
@@ -263,6 +276,21 @@ namespace VstsSyncMigrator.Engine
                     contextLog.Warning("The following items could not be migrated: {ItemIds}", string.Join(", ", _itemsInError));
                 }
                 contextLog.Information("DONE in {Elapsed}", stopwatch.Elapsed.ToString("c"));
+            }
+        }
+
+        private void ValidatePatTokenRequirement()
+        {
+            string collUrl = Engine.Target.Config.AsTeamProjectConfig().Collection.ToString();
+            if (collUrl.Contains("dev.azure.com") || collUrl.Contains(".visualstudio.com"))
+            {
+                // Test that
+                if (Engine.Target.Config.AsTeamProjectConfig().PersonalAccessToken.IsNullOrEmpty())
+                {
+                    var ex = new InvalidOperationException("Missing PersonalAccessToken from Target");
+                    Log.LogError(ex, "When you are migrating to Azure DevOps you MUST provide an PAT so that we can call the REST API for certain actions. For example we would be unable to deal with a Work item Type change.");
+                    throw ex;
+                }
             }
         }
 
@@ -607,6 +635,11 @@ namespace VstsSyncMigrator.Engine
                 int fixedLinkCount = gitRepositoryEnricher.Enrich(sourceWorkItem, targetWorkItem);
                 AddMetric("FixedGitLinkCount", processWorkItemMetrics, fixedLinkCount);
             }
+            else if (targetWorkItem != null && sourceWorkItem.ToWorkItem().Links.Count > 0 && sourceWorkItem.Type == "Test Case" )
+            {
+                _workItemLinkEnricher.MigrateSharedSteps(sourceWorkItem, targetWorkItem);
+                _workItemLinkEnricher.MigrateSharedParameters(sourceWorkItem, targetWorkItem);
+            }
         }
 
         private WorkItemData ReplayRevisions(List<RevisionItem> revisionsToMigrate, WorkItemData sourceWorkItem, WorkItemData targetWorkItem)
@@ -625,9 +658,9 @@ namespace VstsSyncMigrator.Engine
                         TraceWriteLine(LogEventLevel.Information, $"WorkItem has changed type at one of the revisions, from {targetType} to {finalDestType}");
                     }
 
-                    if (skipToFinalRevisedWorkItemType && Engine.TypeDefinitionMaps.Items.ContainsKey(finalDestType))
+                    if (skipToFinalRevisedWorkItemType)
                     {
-                        finalDestType = Engine.TypeDefinitionMaps.Items[finalDestType].Map();
+                        targetType = finalDestType;
                     }
 
                     if (Engine.TypeDefinitionMaps.Items.ContainsKey(targetType))
@@ -657,10 +690,72 @@ namespace VstsSyncMigrator.Engine
                     {
                         destType = Engine.TypeDefinitionMaps.Items[destType].Map();
                     }
+                    bool typeChange = (destType != targetWorkItem.Type);
+                    
+                    if (typeChange)
+                    {
+                        ValidatePatTokenRequirement();
+                        Uri collectionUri = Engine.Target.Config.AsTeamProjectConfig().Collection;
+                        string token = Engine.Target.Config.AsTeamProjectConfig().PersonalAccessToken;
+                        VssConnection connection = new VssConnection(collectionUri, new VssBasicCredential(string.Empty, token));
+                        WorkItemTrackingHttpClient workItemTrackingClient = connection.GetClient<WorkItemTrackingHttpClient>();
+                        JsonPatchDocument patchDocument = new JsonPatchDocument();
+                        DateTime changedDate = ((DateTime) currentRevisionWorkItem.Fields["System.ChangedDate"].Value).AddMilliseconds(-3);
 
+                        patchDocument.Add(
+                            new JsonPatchOperation()
+                            {
+                                Operation = Operation.Add,
+                                Path = "/fields/System.WorkItemType",
+                                Value = destType
+                            }
+                        );
+                        patchDocument.Add(
+                            new JsonPatchOperation()
+                            {
+                                Operation = Operation.Add,
+                                Path = "/fields/System.State",
+                                Value = (string)currentRevisionWorkItem.Fields["System.State"].Value
+                            }
+                        );
+                        patchDocument.Add(
+                            new JsonPatchOperation()
+                            {
+                                Operation = Operation.Add,
+                                Path = "/fields/System.Reason",
+                                Value = (string)currentRevisionWorkItem.Fields["System.Reason"].Value
+                            }
+                        );
+                        patchDocument.Add(
+                            new JsonPatchOperation()
+                            {
+                                Operation = Operation.Add,
+                                Path = "/fields/System.ChangedDate",
+                                Value = changedDate
+                            }
+                        );
+                        int id = Int32.Parse(targetWorkItem.Id);
+                        var result = workItemTrackingClient.UpdateWorkItemAsync(patchDocument, id, bypassRules:true).Result;
+                        targetWorkItem = Engine.Target.WorkItems.GetWorkItem(id);
+                    }
                     PopulateWorkItem(currentRevisionWorkItem, targetWorkItem, destType);
 
+                    var fails = ((WorkItem)targetWorkItem.internalObject).Validate();
+                    foreach (Field f in fails)
+                    {
+                        if (f.Name == "Reason")
+                        {
+                            if (f.AllowedValues.Count > 0)
+                            {
+                                targetWorkItem.ToWorkItem().Fields[f.Name].Value = f.AllowedValues[0];
+                            } else if (f.FieldDefinition.AllowedValues.Count > 0)
+                            {
+                                targetWorkItem.ToWorkItem().Fields[f.Name].Value = f.FieldDefinition.AllowedValues[0];
+                            }
+                        }
+                    }
                     // Impersonate revision author. Mapping will apply later and may change this.
+                    targetWorkItem.ToWorkItem().Fields["System.ChangedDate"].Value = revision.Fields["System.ChangedDate"].Value;
                     targetWorkItem.ToWorkItem().Fields["System.ChangedBy"].Value = revision.Fields["System.ChangedBy"].Value.ToString();
                     targetWorkItem.ToWorkItem().Fields["System.History"].Value = revision.Fields["System.History"].Value;
 
