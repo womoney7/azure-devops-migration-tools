@@ -4,19 +4,20 @@ The Azure DevOps Migration Tools allow you to bulk edit and migrate data between
 
 **Ask Questions on Github: https://github.com/nkdAgility/azure-devops-migration-tools/discussions**
 
-## Some Data from the last 30 days (as of 06/04/2023)
+## Some Data from the last 30 days (as of 05/03/2024)
 
 | Category  | Metric | Notes |
 | ------------- | ------------- | ------------- |
-| Work Item Revisions | **14m** | A single Work Item may have many revisions that we need to migrate |
-| Average Work item Migration Time  | **35s** | Work Item (includes all revisions, links, and attachments for the work item) |
-| RelatedLinkCount | **5m** | Each work item may have many links or none. |
-| Git Commit Links  | **480k** |  |
-| Attachments | **252.37k**  | Total number of attachments migrated |
+| Work Items | **1m** | A single Work Item may have many revisions that we need to migrate |
+| Work Item Revisions | **23m** | A single Work Item may have many revisions that we need to migrate |
+| RelatedLinkCount | **11m** | Each work item may have many links or none. |
+| Git Commit Links  | **1.3m** |  |
+| Attachments | **1.2m**  | Total number of attachments migrated |
 | Test Suits | 52k | total suits migrated | 
-| Test Cases Mapped | **800k** | Total test cases mapped into Suits |
+| Test Cases Mapped | **1.4m** | Total test cases mapped into Suits |
 | Migration Run Ave  | **14 minutes** | Includes dry-runs as well.  |
 | Migration Run Total   |  **19bn Seconds** | Thats **316m hours** or **13m days** of run time in the last 30 days. |
+| Average Work item Migration Time  | **22s** | Work Item (includes all revisions, links, and attachments for the work item) |
 
 
 ## What can you do with this tool?
@@ -42,7 +43,7 @@ The Azure DevOps Migration Tools allow you to bulk edit and migrate data between
 - Bulk edit of Work Items
 - Migration of Test Suites & Test Plans
 - _new_ Migration of Builds & Pipelines
-- Migrate from one Language version of TFS / Azure Devops to another (*new v9.0*)
+- Migrate from one Language version of TFS / Azure Devops to another (*new v9.0*)1.34
 - _new_  Migration of Processes
 
 **NOTE: If you are able to migrate your entire Collection to Azure DevOps Services you should use [Azure DevOps Migration Service](https://azure.microsoft.com/services/devops/migrate/) from Microsoft. If you have a requirement to change Process Template then you will need to do that before you move to Azure DevOps Services.**
@@ -56,11 +57,37 @@ The Azure DevOps Migration Tools allow you to bulk edit and migrate data between
 
 ## Installing and running the tools
 
-We use [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) to host the tools, and you can use the command `winget install nkdAgility.AzureDevOpsMigrationTools` to install them on Windows 10 and Windows 11. For other operating systems you can download the [latest release](https://github.com/nkdAgility/azure-devops-migration-tools/releases/latest) and unzip it to a folder of your choice.
+These tools are available as a portable application and can be installed in a number of ways, including manually from a zip.
+For a more detailed getting started guide please see the [documentation](https://nkdagility.com/docs/azure-devops-migration-tools/getting-started.html).
+
+### Option 1: Winget
+
+We use [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) to host the tools, and you can use the command `winget install nkdAgility.AzureDevOpsMigrationTools` to install them on Windows 10 and Windows 11. 
 
 The tools will be installed to `%Localappdata%\Microsoft\WinGet\Packages\nkdAgility.AzureDevOpsMigrationTools_Microsoft.Winget.Source_XXXXXXXXXX` and a symbolic link to `devopsmigration.exe` that lets you run it from anywhere using `devopsmigration init`.
 
-For a more detailed getting started guide please see the [documentation](https://nkdagility.com/docs/azure-devops-migration-tools/getting-started.html).
+**NOTE: Do not install using an elevated command prompt!**
+
+### Option 2: Chocolatey
+
+We also deploy to [Chocolatey](https://chocolatey.org/packages/nkdagility.azuredevopsmigrationtools) and you can use the command `choco install vsts-sync-migrator` to install them on Windows Server. 
+
+The tools will be installed to `C:\Tools\MigrationTools\` which should be added to the path. You can run `devopsmigration.exe`
+
+### Option 3: Manual
+
+You can download the [latest release](https://github.com/nkdAgility/azure-devops-migration-tools/releases/latest) and unzip it to a folder of your choice.
+
+## Advanced tools
+
+There are additional advanced tooling available on [Azure DevOps Automation Tools](https://github.com/nkdAgility/azure-devops-automation-tools). These are a collection of Powershell scripts that can be used to;
+
+- Generate Migration Tools configurations across many projects on many organisations
+- Export Stats on many projects on many organisations
+- Publish Custom fields across many projects on many organisations
+- Output the fields and other data for many projects on many organisations
+
+These tools are designed to help you manage migration of Work Items at scale.
 
 ## Support
 
@@ -79,35 +106,40 @@ We use these tools with our customers, and for fun, to do real world migrations 
 
 ## Change Log
 
-- 14.3 - Created a flag for `ShouldCreateNodesUpFront`, while the default is `true` this is a private preview of a new feature. Instead of creating the area and iteration paths up front, this new feature instead creates the Area & Iteration paths at validation time. For each missing path it will create it, and for those that exist it will simply pass over after a `GetNodeFromPath` call. For tose wishing to participate in the preview please set `ShouldCreateNodesUpFront` to `false`, and to create the nodes rather than just list them set `ShouldCreateMissingRevisionPaths` to `true` as well. It will still list nodes that are not able to be created and require a mapping. NOTE: You can also run with `"ShouldCreateMissingRevisionPaths": false` to list all the nodes that will be created so that you can create more elaborate mappings. 
-- 14.2 - Removed the `StopMigrationOnMissingAreaIterationNodes` flag. All missing nodes MUST be present or mapped using `AreaMaps` and `IterationMaps`. System will always stop on missing nodes.
-- 14.1 - Enabled auto update on client devices, server still used choco
-- 14.0 - Move from Chocolaty to Winget as the base installer. We will continue to publish to Chocolaty, but we recommend using `winget install nkdAgility.AzureDevOpsMigrationTools` for future installs. Main executable renamed to "devopsmigration.exe" to prevent conflict with other applications with symbolic links.
-- 13.2 - Added [ExportUsersForMapping](https://nkdagility.com/learn/azure-devops-migration-tools/Reference/v1/Processors/TeamMigrationContext/) to export a json file with a list of users ready for a field mapping.
-- 13.1 - Update all NuGet packages to the latest version.
-- 13.0 - Update to .net 7.0 with all dependencies. Focus on documentation improvements to support future updates.
-- 12.1 - Make embedded images regex lazy
-- 12.1 - Added a stop when there are area or iteration nodes in the source history that are not in the target. This causes missing data. System will now list the areas and iteration that are missing, and then stop. You can decide to add them manually, or add a field mapping.
-- v11.11 - Refactored revision manager to have more tests and support limiting the number of revisions. CollapseRevisions has been replaced by setting MaxRevisions to 1 and setting AttachRevisionHistory to true; MaxRevisions sets the maximum number of revisions that will be migrated. "First + Last*N = Max". If this was set to 5 and there were 10 revisions you would get the first 1 (creation) and the latest 4 migrated. This is done after all of the existing revisions are created but before anything newer than that target is removed.
-- v11.10 - Added ability to limit the number of revisions migrated with `MaxRevisions` on the `WorkItemMigration` processor. 0 = All, and any other number should migrate the first revision + the latest up to MAX.
-- v11.9 - Dark launch of `Process` migration by @akanieski 
-- v11.9 - Dark launch of `Pipelines` & `Builds` migration by @tomfrenzel
-- v11.8 - As part of moving to the new architecture we moved to default newtonsoft type handling with `$type` properties instead of `ObjectType` ___To Migrate rename "ObjectType" to "$type" in your configuration!___
-- v11.5 - Added more useful logging levels. Replace `"TelemetryEnableTrace": false` with `"LogLevel": "Verbose"` in the config. Verbose will only be logged to the logfile.
-- v11.2.1 - Removed NodeMigrationContext and converted it to an enricher for Work Items. Still needs work, so that it migrates individual nodes, but currently migrates all.
-- v10.1 - Changed config design to have only the Name and not FullName of the class. Remove `MigrationTools.Core.Configuration.FieldMap.` and `MigrationTools.Core.Configuration.Processing.` from the config leaving only the Name of the class in the ObjectType field.
-- v10.0 - Start of the great refactor over to .NET Core and the REST API as the Object Model has been retired.
+- [v15.0.0](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v15.0.0) - Release v15! Query and CommonEnrichersConfig changes 
+- [v14.4.6](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v14.4.6) - Release v14! Migrate to winget and change exe name to `devopsmigration`
+- [v13.2.1](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v13.2.1) - Oct 9, 2023
+	- 13.2 - Added [ExportUsersForMapping](https://nkdagility.com/learn/azure-devops-migration-tools/Reference/v1/Processors/TeamMigrationContext/) to export a json file with a list of users ready for a field mapping.
+	- 13.1 - Update all NuGet packages to the latest version.
+	- 13.0 - Update to .net 7.0 with all dependencies. Focus on documentation improvements to support future updates.
+- [v12.8.10](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v12.8.10) - Apr 25, 2023
+	- 12.1 - Make embedded images regex lazy
+	- 12.1 - Added a stop when there are area or iteration nodes in the source history that are not in the target. This causes missing data. System will now list the areas and iteration that are missing, and then stop. You can decide to add them manually, or add a field mapping.
+- [v11.12.23](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v11.12.23) - Jun 6, 2022
+	- v11.11 - Refactored revision manager to have more tests and support limiting the number of revisions. CollapseRevisions has been replaced by setting MaxRevisions to 1 and setting AttachRevisionHistory to true; MaxRevisions sets the maximum number of revisions that will be migrated. "First + Last*N = Max". If this was set to 5 and there were 10 revisions you would get the first 1 (creation) and the latest 4 migrated. This is done after all of the existing revisions are created but before anything newer than that target is removed.
+	- v11.10 - Added ability to limit the number of revisions migrated with `MaxRevisions` on the `WorkItemMigration` processor. 0 = All, and any other number should migrate the first revision + the latest up to MAX.
+	- v11.9 - Dark launch of `Process` migration by @akanieski 
+	- v11.9 - Dark launch of `Pipelines` & `Builds` migration by @tomfrenzel
+	- v11.8 - As part of moving to the new architecture we moved to default newtonsoft type handling with `$type` properties instead of `ObjectType` ___To Migrate rename "ObjectType" to "$type" in your configuration!___
+	- v11.5 - Added more useful logging levels. Replace `"TelemetryEnableTrace": false` with `"LogLevel": "Verbose"` in the config. Verbose will only be logged to the logfile.
+	- v11.2.1 - Removed NodeMigrationContext and converted it to an enricher for Work Items. Still needs work, so that it migrates individual nodes, but currently migrates all.
+- [v10.2.13](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v10.2.13) - Sep 27, 2020 
+	- v10.1 - Changed config design to have only the Name and not FullName of the class. Remove `MigrationTools.Core.Configuration.FieldMap.` and `MigrationTools.Core.Configuration.Processing.` from the config leaving only the Name of the class in the ObjectType field.
+	- v10.0 - Start of the great refactor over to .NET Core and the REST API as the Object Model has been retired.
+- [v9.3.1](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v9.3.1) - Sep 7, 2020
 - v9.0 - Added support for migration between other language versions of Azure DevOps. Developed for German -> English
-- v8.9 - Added 'Collapse Revisions' feature to collapse and attache revisions instead of replaying them
-- v8.8 - 'SkipToFinalRevisedWorkItemType' feature added to handle scenario when changing Work Item Type
-- v8.7 - Support for inline images using a Personal Access Token added to the Source Project
-- v8.6 - Support for fixing links from TFVC Changesets to Git Commits using a mapping file generated from a Git-TFS migration.
-- v8.5 - Attachment Max size and linking work items to git repos between projects.
-- v8.4 - Support for cross-project linking of work items between projects.
-- v8.3 - Support for restarting the migration and syncing at the revision level.
-- v8.2 - Merge Git commit Fixing into Work Item migration (requires repos to be migrated first, can be rerun)
-- v8.0 - Merge of Work Item, Link, & attachment migrators into one.
-
+- [v8.9.10](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/v8.9.10) -Aug 6, 2020
+	- v8.9 - Added 'Collapse Revisions' feature to collapse and attache revisions instead of replaying them
+	- v8.8 - 'SkipToFinalRevisedWorkItemType' feature added to handle scenario when changing Work Item Type
+	- v8.7 - Support for inline images using a Personal Access Token added to the Source Project
+	- v8.6 - Support for fixing links from TFVC Changesets to Git Commits using a mapping file generated from a Git-TFS migration.
+	- v8.5 - Attachment Max size and linking work items to git repos between projects.
+	- v8.4 - Support for cross-project linking of work items between projects.
+	- v8.3 - Support for restarting the migration and syncing at the revision level.
+	- v8.2 - Merge Git commit Fixing into Work Item migration (requires repos to be migrated first, can be rerun)
+	- v8.0 - Merge of Work Item, Link, & attachment migrators into one.
+- [v7.5.74](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/7.5.74) Sep 18, 2019
+- [v6.3.1](https://github.com/nkdAgility/azure-devops-migration-tools/releases/tag/6.3.1) Feb 23, 2017
 ## The Technical Details
 
 |-| Technical Overview |

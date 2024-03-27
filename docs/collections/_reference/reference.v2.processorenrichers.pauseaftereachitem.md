@@ -17,11 +17,11 @@ architecture: v2
 options:
 - parameterName: Enabled
   type: Boolean
-  description: missng XML code comments
-  defaultValue: missng XML code comments
+  description: If enabled this will run this migrator
+  defaultValue: true
 - parameterName: RefName
   type: String
-  description: missng XML code comments
+  description: For internal use
   defaultValue: missng XML code comments
 status: missng XML code comments
 processingTarget: missng XML code comments

@@ -8,10 +8,16 @@ namespace MigrationTools.DataContracts
         public bool anchored { get; set; } = true;
 
         public string sourcePath { get; set; }
+        public string sourceSystemPath { get; set; }
         public string targetPath { get; set; }
-        public string systemPath { get; set; }
+        public string targetSystemPath { get; set; }
         public string nodeType { get; set; }
+
+        public DateTime? startDate { get; set; }
+        public DateTime? finishDate { get; set; }
+
         public List<int> workItems { get; set; }
+        public bool sourcePathExists { get; set; }
 
         public override bool Equals(object obj)
         {
@@ -29,5 +35,6 @@ namespace MigrationTools.DataContracts
         {
             return this.sourcePath.GetHashCode();
         }
+
     }
 }

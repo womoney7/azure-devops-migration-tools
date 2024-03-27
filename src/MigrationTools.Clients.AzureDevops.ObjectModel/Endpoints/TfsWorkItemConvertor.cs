@@ -26,6 +26,7 @@ namespace MigrationTools.Endpoints
                     fieldItems[revField.Key] = new FieldItem
                     {
                         Name = revField.Value.Name,
+                        FieldType = revField.Value.FieldType,
                         ReferenceName = revField.Value.ReferenceName,
                         Value = revField.Value.Value,
                         internalObject = revField.Value.internalObject,
@@ -47,6 +48,7 @@ namespace MigrationTools.Endpoints
                 Index = x.Index,
                 Number = (int)x.Fields["System.Rev"].Value,
                 ChangedDate = (DateTime)x.Fields["System.ChangedDate"].Value,
+                OriginalChangedDate = (DateTime)x.Fields["System.ChangedDate"].Value,
                 Type = x.Fields["System.WorkItemType"].Value as string,
                 Fields = GetFieldItems(x.Fields)
             }).ToList();
@@ -58,7 +60,7 @@ namespace MigrationTools.Endpoints
             }
             catch (ArgumentException e)
             {
-                Log.Error(e, "ArgumentException");
+                Log.Warning(e, "For some Reason there are multiple Revisions on {WorkItemId} with the same System.Rev. We will create a renumbered list...", items[0].WorkItemId);
                 var currentNumber = -1;
                 foreach (var item in items)
                 {
@@ -80,6 +82,8 @@ namespace MigrationTools.Endpoints
                 Name = x.Name,
                 ReferenceName = x.ReferenceName,
                 Value = x.Value,
+                FieldType = x.FieldDefinition.FieldType.ToString(),
+                IsIdentity = x.FieldDefinition.IsIdentity,
                 internalObject = x
             })
             .ToDictionary(r => r.ReferenceName);

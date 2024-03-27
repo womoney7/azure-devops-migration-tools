@@ -355,10 +355,15 @@ namespace MigrationTools.Processors
             // Replace taskgroup and variablegroup sIds with tIds
             foreach (var definitionToBeMigrated in definitionsToBeMigrated)
             {
-                var sourceConnectedServiceId = definitionToBeMigrated.Repository.Properties.ConnectedServiceId;
+                var sourceConnectedServiceId = definitionToBeMigrated.Repository?.Properties?.ConnectedServiceId;
                 var targetConnectedServiceId = targetServiceConnections.FirstOrDefault(s => sourceServiceConnections
                     .FirstOrDefault(c => c.Id == sourceConnectedServiceId)?.Name == s.Name)?.Id;
-                definitionToBeMigrated.Repository.Properties.ConnectedServiceId = targetConnectedServiceId;
+
+                if (definitionToBeMigrated.Repository?.Properties != null)
+                {
+                    definitionToBeMigrated.Repository.Properties.ConnectedServiceId = targetConnectedServiceId;
+                    MapRepositoriesInBuidDefinition(sourceRepositories, targetRepositories, definitionToBeMigrated);
+                }
 
                 definitionToBeMigrated.Triggers?.ForEach(trigger =>
                 {
@@ -369,8 +374,6 @@ namespace MigrationTools.Processors
                         definition.project = new { id = targetProject.Id, name = targetProject.Name };
                     }
                 });
-
-                MapRepositoriesInBuidDefinition(sourceRepositories, targetRepositories, definitionToBeMigrated);
 
                 if (TaskGroupMapping is not null)
                 {

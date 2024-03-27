@@ -8,11 +8,13 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.ApplicationInsights.Channel;
 using Microsoft.ApplicationInsights.DataContracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.TeamFoundation.Common;
+using Microsoft.TeamFoundation.TestManagement;
 using Microsoft.TeamFoundation.WorkItemTracking.Client;
 using Microsoft.TeamFoundation.WorkItemTracking.Proxy;
 using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
@@ -24,12 +26,14 @@ using MigrationTools;
 using MigrationTools._EngineV1.Clients;
 using MigrationTools._EngineV1.Configuration;
 using MigrationTools._EngineV1.Configuration.Processing;
+using MigrationTools._EngineV1.Containers;
 using MigrationTools._EngineV1.DataContracts;
 using MigrationTools._EngineV1.Enrichers;
 using MigrationTools._EngineV1.Processors;
 using MigrationTools.DataContracts;
 using MigrationTools.Enrichers;
 using MigrationTools.ProcessorEnrichers;
+using MigrationTools.ProcessorEnrichers.WorkItemProcessorEnrichers;
 using Newtonsoft.Json.Linq;
 using Serilog.Context;
 using Serilog.Events;
@@ -45,7 +49,6 @@ namespace VstsSyncMigrator.Engine
     /// <processingtarget>Work Items</processingtarget>
     public class WorkItemMigrationContext : MigrationProcessorBase
     {
-        private const string RegexPatternForAreaAndIterationPathsFix = "\\[?(?<key>System.AreaPath|System.IterationPath)+\\]?[^']*'(?<value>[^']*(?:''.[^']*)*)'";
 
         private static int _count = 0;
         private static int _current = 0;
@@ -56,11 +59,14 @@ namespace VstsSyncMigrator.Engine
         private List<string> _ignore;
 
         private ILogger contextLog;
-        private IAttachmentMigrationEnricher attachmentEnricher;
+        private TfsAttachmentEnricher _attachmentEnricher;
         private IWorkItemProcessorEnricher embededImagesEnricher;
         private IWorkItemProcessorEnricher _workItemEmbededLinkEnricher;
+        private StringManipulatorEnricher _stringManipulatorEnricher;
+        private TfsUserMappingEnricher _userMappingEnricher;
         private TfsGitRepositoryEnricher gitRepositoryEnricher;
         private TfsNodeStructure _nodeStructureEnricher;
+        private ITelemetryLogger _telemetry;
         private readonly EngineConfiguration _engineConfig;
         private TfsRevisionManager _revisionManager;
         private TfsValidateRequiredField _validateConfig;
@@ -74,20 +80,27 @@ namespace VstsSyncMigrator.Engine
                                         IServiceProvider services,
                                         ITelemetryLogger telemetry,
                                         ILogger<WorkItemMigrationContext> logger,
+                                        TfsUserMappingEnricher userMappingEnricher,
+                                        TfsAttachmentEnricher attachmentEnricher,
                                         TfsNodeStructure nodeStructureEnricher,
                                         TfsRevisionManager revisionManager,
                                         TfsWorkItemLinkEnricher workItemLinkEnricher,
+                                        StringManipulatorEnricher stringManipulatorEnricher,
                                         TfsWorkItemEmbededLinkEnricher workItemEmbeddedLinkEnricher,
                                         TfsValidateRequiredField requiredFieldValidator,
                                         IOptions<EngineConfiguration> engineConfig)
             : base(engine, services, telemetry, logger)
         {
+            _telemetry = telemetry;
             _engineConfig = engineConfig.Value;
             contextLog = Serilog.Log.ForContext<WorkItemMigrationContext>();
+            _attachmentEnricher = attachmentEnricher;
             _nodeStructureEnricher = nodeStructureEnricher;
+            _userMappingEnricher = userMappingEnricher;
             _revisionManager = revisionManager;
             _workItemLinkEnricher = workItemLinkEnricher;
             _workItemEmbededLinkEnricher = workItemEmbeddedLinkEnricher;
+            _stringManipulatorEnricher = stringManipulatorEnricher;
             _validateConfig = requiredFieldValidator;
         }
 
@@ -97,31 +110,23 @@ namespace VstsSyncMigrator.Engine
         {
             _config = (WorkItemMigrationConfig)config;
 
-            if (_config.UseCommonNodeStructureEnricherConfig)
-            {
-                var nseConfig = _engineConfig.CommonEnrichersConfig.OfType<TfsNodeStructureOptions>()
-                                    .FirstOrDefault() ??
-                                throw new InvalidOperationException(
-                                    "Cannot use common node structure because it is not found.");
-                _nodeStructureEnricher.Configure(nseConfig);
-            }
-            else
-            {
-                _nodeStructureEnricher.Configure(new TfsNodeStructureOptions
-                {
-                    Enabled = true,
-                    NodeBasePaths = _config.NodeBasePaths,
-                    PrefixProjectToNodes = _config.PrefixProjectToNodes,
-                    AreaMaps = _config.AreaMaps ?? new Dictionary<string, string>(),
-                    IterationMaps = _config.IterationMaps ?? new Dictionary<string, string>(),
-                    ShouldCreateMissingRevisionPaths = _config.ShouldCreateMissingRevisionPaths,
-                    ShouldCreateNodesUpFront = _config.ShouldCreateNodesUpFront
-                }); ;
-            }
+            ImportCommonEnricherConfigs();
+        }
 
-            _revisionManager.Configure(new TfsRevisionManagerOptions() { Enabled = true, MaxRevisions = _config.MaxRevisions, ReplayRevisions = _config.ReplayRevisions });
-
-            _workItemLinkEnricher.Configure(_config.LinkMigrationSaveEachAsAdded, _config.FilterWorkItemsThatAlreadyExistInTarget);
+        private void ImportCommonEnricherConfigs()
+        {
+            /// setup _engineConfig.CommonEnrichersConfig
+            if (_engineConfig.CommonEnrichersConfig == null)
+            {
+                Log.LogError("CommonEnrichersConfig cant be Null! it must be a minimum of `[]`");
+                Environment.Exit(-1);
+            }
+            PullCommonEnrichersConfig<TfsNodeStructure, TfsNodeStructureOptions>(_engineConfig.CommonEnrichersConfig, _nodeStructureEnricher);
+            PullCommonEnrichersConfig<TfsRevisionManager, TfsRevisionManagerOptions>(_engineConfig.CommonEnrichersConfig, _revisionManager);
+            PullCommonEnrichersConfig<TfsWorkItemLinkEnricher, TfsWorkItemLinkEnricherOptions>(_engineConfig.CommonEnrichersConfig, _workItemLinkEnricher);
+            PullCommonEnrichersConfig<StringManipulatorEnricher, StringManipulatorEnricherOptions>(_engineConfig.CommonEnrichersConfig, _stringManipulatorEnricher);
+            PullCommonEnrichersConfig<TfsAttachmentEnricher, TfsAttachmentEnricherOptions>(_engineConfig.CommonEnrichersConfig, _attachmentEnricher);
+            PullCommonEnrichersConfig<TfsUserMappingEnricher, TfsUserMappingEnricherOptions>(_engineConfig.CommonEnrichersConfig, _userMappingEnricher);
         }
 
         internal void TraceWriteLine(LogEventLevel level, string message, Dictionary<string, object> properties = null)
@@ -138,7 +143,7 @@ namespace VstsSyncMigrator.Engine
 
         protected override void InternalExecute()
         {
-            Log.LogInformation("WorkItemMigrationContext::InternalExecute ");
+            Log.LogDebug("WorkItemMigrationContext::InternalExecute ");
             if (_config == null)
             {
                 throw new Exception("You must call Configure() first");
@@ -146,75 +151,65 @@ namespace VstsSyncMigrator.Engine
             //////////////////////////////////////////////////
             ValidatePatTokenRequirement();
             //////////////////////////////////////////////////
-            var workItemServer = Engine.Source.GetService<WorkItemServer>();
-            attachmentEnricher = new TfsAttachmentEnricher(workItemServer, _config.AttachmentWorkingPath, _config.AttachmentMaxSize);
+     
             embededImagesEnricher = Services.GetRequiredService<TfsEmbededImagesEnricher>();
             gitRepositoryEnricher = Services.GetRequiredService<TfsGitRepositoryEnricher>();
 
-
-            _nodeStructureEnricher.ProcessorExecutionBegin(null);
+            if (_nodeStructureEnricher.Options.Enabled)
+            {
+                _nodeStructureEnricher.ProcessorExecutionBegin(null);
+            } else
+            {
+                Log.LogWarning("WorkItemMigrationContext::InternalExecute: nodeStructureEnricher is disabled! This may cause work item migration errors! ");
+            }
+            
 
             var stopwatch = Stopwatch.StartNew();
             _itemsInError = new List<string>();
 
             try
             {
-                //Validation: make sure that the ReflectedWorkItemId field name specified in the config exists in the target process, preferably on each work item type.
+
+
                 PopulateIgnoreList();
 
-                string sourceQuery =
-                    string.Format(
-                        @"SELECT [System.Id], [System.Tags] FROM WorkItems WHERE [System.TeamProject] = @TeamProject {0} ORDER BY {1}",
-                        _config.WIQLQueryBit, _config.WIQLOrderBit);
-
                 // Inform the user that he maybe has to be patient now
-                contextLog.Information("Querying items to be migrated: {SourceQuery} ...", sourceQuery);
-                var sourceWorkItems = Engine.Source.WorkItems.GetWorkItems(sourceQuery);
+                contextLog.Information("Querying items to be migrated: {SourceQuery} ...", _config.WIQLQuery);
+                var sourceWorkItems = Engine.Source.WorkItems.GetWorkItems(_config.WIQLQuery);
                 contextLog.Information("Replay all revisions of {sourceWorkItemsCount} work items?",
                     sourceWorkItems.Count);
 
-
-
                 //////////////////////////////////////////////////
-                contextLog.Information("ValidateTargetNodesExist::Checking all Nodes on Work items");
-                List<NodeStructureItem> nodeStructureMissingItems = _nodeStructureEnricher.GetMissingRevisionNodes(sourceWorkItems);
-                if (_nodeStructureEnricher.ValidateTargetNodesExist(nodeStructureMissingItems))
-                {
-                    throw new Exception("Missing Iterations in Target preventing progress, check log for list. To continue you MUST configure IterationMaps or AreaMaps that matches the missing paths..");
-                }
-
+                ValidateAllWorkItemTypesHaveReflectedWorkItemIdField(sourceWorkItems);
+                ValiddateWorkItemTypesExistInTarget(sourceWorkItems);
+                ValidateAllNodesExistOrAreMapped(sourceWorkItems);
+                ValidateAllUsersExistOrAreMapped(sourceWorkItems);
                 //////////////////////////////////////////////////
+
                 contextLog.Information("Found target project as {@destProject}", Engine.Target.WorkItems.Project.Name);
+
                 //////////////////////////////////////////////////////////FilterCompletedByQuery
+
                 if (_config.FilterWorkItemsThatAlreadyExistInTarget)
                 {
                     contextLog.Information(
                         "[FilterWorkItemsThatAlreadyExistInTarget] is enabled. Searching for work items that have already been migrated to the target...",
                         sourceWorkItems.Count());
 
-                    string targetWIQLQueryBit = FixAreaPathAndIterationPathForTargetQuery(_config.WIQLQueryBit,
+                    string targetWIQLQuery = _nodeStructureEnricher.FixAreaPathAndIterationPathForTargetQuery(_config.WIQLQuery,
                         Engine.Source.WorkItems.Project.Name, Engine.Target.WorkItems.Project.Name, contextLog);
+
                     sourceWorkItems = ((TfsWorkItemMigrationClient)Engine.Target.WorkItems).FilterExistingWorkItems(
-                        sourceWorkItems,
-                        new TfsWiqlDefinition() { OrderBit = _config.WIQLOrderBit, QueryBit = targetWIQLQueryBit },
+                        sourceWorkItems, _config.WIQLQuery,
                         (TfsWorkItemMigrationClient)Engine.Source.WorkItems);
                     contextLog.Information(
                         "!! After removing all found work items there are {SourceWorkItemCount} remaining to be migrated.",
                         sourceWorkItems.Count());
                 }
-                //////////////////////////////////////////////////
-
-                var result = _validateConfig.ValidatingRequiredField(
-                    Engine.Target.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName, sourceWorkItems);
-                if (!result)
-                {
-                    var ex = new InvalidFieldValueException(
-                        "Not all work items in scope contain a valid ReflectedWorkItemId Field!");
-                    Log.LogError(ex, "Not all work items in scope contain a valid ReflectedWorkItemId Field!");
-                    throw ex;
-                }
 
                 //////////////////////////////////////////////////
+
+
                 _current = 1;
                 _count = sourceWorkItems.Count;
                 _elapsedms = 0;
@@ -279,6 +274,95 @@ namespace VstsSyncMigrator.Engine
             }
         }
 
+        private void ValidateAllUsersExistOrAreMapped(List<WorkItemData> sourceWorkItems)
+        {
+
+            contextLog.Information("Validating::Check that all users in the source exist in the target or are mapped!");
+            List<IdentityMapData> usersToMap = new List<IdentityMapData>();
+            usersToMap = _userMappingEnricher.GetUsersInSourceMappedToTargetForWorkItems(sourceWorkItems);
+            if (usersToMap != null && usersToMap?.Count > 0)
+            {
+                Log.LogWarning("Validating Failed! There are {usersToMap} users that exist in the source that do not exist in the target. This will not cause any errors, but may result in disconnected users that could have been mapped. Use the ExportUsersForMapping processor to create a list of mappable users. Then Import using ", usersToMap.Count);
+            }
+           
+        }
+
+        private void ValidateAllNodesExistOrAreMapped(List<WorkItemData> sourceWorkItems)
+        {
+            contextLog.Information("Validating::Check that all Area & Iteration paths from Source have a valid mapping on Target");
+            if (!_nodeStructureEnricher.Options.Enabled && Engine.Target.Config.AsTeamProjectConfig().Project != Engine.Source.Config.AsTeamProjectConfig().Project)
+            {
+                throw new ConfigException("Source and Target projects have different names, but  NodeStructureEnricher is not enabled. Cant continue... please enable nodeStructureEnricher in the config and restart.");
+            }
+            if ( _nodeStructureEnricher.Options.Enabled)
+            {
+                List<NodeStructureItem> nodeStructureMissingItems = _nodeStructureEnricher.GetMissingRevisionNodes(sourceWorkItems);
+                if (_nodeStructureEnricher.ValidateTargetNodesExist(nodeStructureMissingItems))
+                {
+                    throw new Exception("Missing Iterations in Target preventing progress, check log for list. To continue you MUST configure IterationMaps or AreaMaps that matches the missing paths..");
+                }
+            } else
+            {
+                contextLog.Error("nodeStructureEnricher is disabled! Please enable it in the config.");
+            }            
+        }
+
+        private void ValidateAllWorkItemTypesHaveReflectedWorkItemIdField(List<WorkItemData> sourceWorkItems)
+        {
+            contextLog.Information("Validating::Check all Target Work Items have the RefectedWorkItemId field");
+
+            var result = _validateConfig.ValidatingRequiredField(
+                Engine.Target.Config.AsTeamProjectConfig().ReflectedWorkItemIDFieldName, sourceWorkItems);
+            if (!result)
+            {
+                var ex = new InvalidFieldValueException(
+                    "Not all work items in scope contain a valid ReflectedWorkItemId Field!");
+                Log.LogError(ex, "Not all work items in scope contain a valid ReflectedWorkItemId Field!");
+                throw ex;
+            }
+        }
+
+        private void ValiddateWorkItemTypesExistInTarget(List<WorkItemData> sourceWorkItems)
+        {
+            contextLog.Information("Validating::Check that all work item types needed in the Target exist or are mapped");
+            // get list of all work item types
+            List<String> sourceWorkItemTypes = sourceWorkItems.SelectMany(x => x.Revisions.Values)
+            //.Where(x => x.Fields[fieldName].Value.ToString().Contains("\\"))
+            .Select(x => x.Type)
+            .Distinct()
+            .ToList();
+
+            Log.LogDebug("Validating::WorkItemTypes::sourceWorkItemTypes: {count} WorkItemTypes in the full source history {sourceWorkItemTypesString}", sourceWorkItemTypes.Count(), string.Join(",", sourceWorkItemTypes));
+
+            var targetWorkItemTypes = Engine.Target.WorkItems.Project.ToProject().WorkItemTypes.Cast<WorkItemType>().Select(x => x.Name);
+            Log.LogDebug("Validating::WorkItemTypes::targetWorkItemTypes::{count} WorkItemTypes in Target process: {targetWorkItemTypesString}", targetWorkItemTypes.Count(), string.Join(",", targetWorkItemTypes));
+
+            var missingWorkItemTypes = sourceWorkItemTypes.Where(sourceWit => !targetWorkItemTypes.Contains(sourceWit)); // the real one
+            if (missingWorkItemTypes.Count() > 0)
+            {
+                Log.LogWarning("Validating::WorkItemTypes::targetWorkItemTypes::There are {count} WorkItemTypes that are used in the history of the Source and that do not exist in the Target. These will all need mapped using `WorkItemTypeDefinition` in the config. ", missingWorkItemTypes.Count());
+
+                bool allTypesMapped = true;
+                foreach (var missingWorkItemType in missingWorkItemTypes)
+                {
+                    bool thisTypeMapped = true;
+                    if (!Engine.TypeDefinitionMaps.Items.ContainsKey(missingWorkItemType))
+                    {
+                        thisTypeMapped = false;
+                    }
+                    Log.LogWarning("Validating::WorkItemTypes::targetWorkItemTypes::{missingWorkItemType}::Mapped? {thisTypeMapped}", missingWorkItemType, thisTypeMapped.ToString());
+                    allTypesMapped &= thisTypeMapped;
+                }
+                if (!allTypesMapped)
+                {
+                    var ex = new Exception(
+                       "Not all WorkItemTypes present in the Source are present in the Target or mapped! Filter them from the query, or map the to target types.");
+                    Log.LogError(ex, "Not all WorkItemTypes present in the Source are present in the Target or mapped using `WorkItemTypeDefinition` in the config.");
+                    throw ex;
+                }
+            }
+        }
+
         private void ValidatePatTokenRequirement()
         {
             string collUrl = Engine.Target.Config.AsTeamProjectConfig().Collection.ToString();
@@ -292,55 +376,6 @@ namespace VstsSyncMigrator.Engine
                     throw ex;
                 }
             }
-        }
-
-        internal string FixAreaPathAndIterationPathForTargetQuery(string sourceWIQLQueryBit, string sourceProject, string targetProject, ILogger? contextLog)
-        {
-
-            string targetWIQLQueryBit = sourceWIQLQueryBit;
-
-            if (string.IsNullOrWhiteSpace(targetWIQLQueryBit))
-            {
-                return targetWIQLQueryBit;
-            }
-
-            var matches = Regex.Matches(targetWIQLQueryBit, RegexPatternForAreaAndIterationPathsFix);
-
-
-            if (string.IsNullOrWhiteSpace(sourceProject)
-                || string.IsNullOrWhiteSpace(targetProject)
-                || sourceProject == targetProject)
-            {
-                return targetWIQLQueryBit;
-            }
-
-            foreach (Match match in matches)
-            {
-                var value = match.Groups["value"].Value;
-                if (string.IsNullOrWhiteSpace(value) || !value.StartsWith(sourceProject))
-                    continue;
-
-                var fieldType = match.Groups["key"].Value;
-                TfsNodeStructureType structureType;
-                switch (fieldType)
-                {
-                    case "System.AreaPath":
-                        structureType = TfsNodeStructureType.Area;
-                        break;
-                    case "System.IterationPath":
-                        structureType = TfsNodeStructureType.Iteration;
-                        break;
-                    default:
-                        throw new InvalidOperationException($"Field type {fieldType} is not supported for query remapping.");
-                }
-
-                var remappedPath = _nodeStructureEnricher.GetNewNodeName(value, structureType);
-                targetWIQLQueryBit = targetWIQLQueryBit.Replace(value, remappedPath);
-            }
-
-            contextLog?.Information("[FilterWorkItemsThatAlreadyExistInTarget] is enabled. Source project {sourceProject} is replaced with target project {targetProject} on the WIQLQueryBit which resulted into this target WIQLQueryBit \"{targetWIQLQueryBit}\" .", sourceProject, targetProject, targetWIQLQueryBit);
-
-            return targetWIQLQueryBit;
         }
 
         private static bool IsNumeric(string val, NumberStyles numberStyle)
@@ -409,10 +444,10 @@ namespace VstsSyncMigrator.Engine
         }
 
         // TODO : Make this into the Work Item mapping tool
-        private void PopulateWorkItem(WorkItemData oldWi, WorkItemData newwit, string destType)
+        private void PopulateWorkItem(WorkItemData oldWorkItemData, WorkItemData newWorkItemData, string destType)
         {
-            var oldWorkItem = oldWi.ToWorkItem();
-            var newWorkItem = newwit.ToWorkItem();
+            var oldWorkItem = oldWorkItemData.ToWorkItem();
+            var newWorkItem = newWorkItemData.ToWorkItem();
             var fieldMappingTimer = Stopwatch.StartNew();
 
             if (newWorkItem.IsPartialOpen || !newWorkItem.IsOpen)
@@ -426,12 +461,13 @@ namespace VstsSyncMigrator.Engine
 
             foreach (Field f in oldWorkItem.Fields)
             {
+                _userMappingEnricher.MapUserIdentityField(f);
                 if (newWorkItem.Fields.Contains(f.ReferenceName) == false)
                 {
                     var missedMigratedValue = oldWorkItem.Fields[f.ReferenceName].Value;
                     if (missedMigratedValue != null && !string.Empty.Equals(missedMigratedValue))
                     {
-                        Log.LogDebug("PopulateWorkItem:FieldUpdate: Missing field in target workitem, Source WorkItemId: {WorkitemId}, Field: {MissingField}, Value: {SourceValue}", oldWi.Id, f.ReferenceName, missedMigratedValue);
+                        Log.LogWarning("PopulateWorkItem:FieldUpdate: Missing field in target workitem, Source WorkItemId: {WorkitemId}, Field: {MissingField}, Value: {SourceValue}", oldWorkItemData.Id, f.ReferenceName, missedMigratedValue);
                     }
                     continue;
                 }
@@ -439,15 +475,31 @@ namespace VstsSyncMigrator.Engine
                     (!newWorkItem.Fields[f.ReferenceName].IsChangedInRevision || newWorkItem.Fields[f.ReferenceName].IsEditable)
                     && oldWorkItem.Fields[f.ReferenceName].Value != newWorkItem.Fields[f.ReferenceName].Value)
                 {
-                    Log.LogDebug("PopulateWorkItem:FieldUpdate: {ReferenceName} | Old:{OldReferenceValue} New:{NewReferenceValue}", f.ReferenceName, oldWorkItem.Fields[f.ReferenceName].Value, newWorkItem.Fields[f.ReferenceName].Value);
-                    newWorkItem.Fields[f.ReferenceName].Value = oldWorkItem.Fields[f.ReferenceName].Value;
-                }
+                    Log.LogDebug("PopulateWorkItem:FieldUpdate: {ReferenceName} | Source:{OldReferenceValue} Target:{NewReferenceValue}", f.ReferenceName, oldWorkItem.Fields[f.ReferenceName].Value, newWorkItem.Fields[f.ReferenceName].Value);
+
+                    switch (f.FieldDefinition.FieldType)
+                    {
+                        case FieldType.String:
+                            _stringManipulatorEnricher.ProcessorExecutionWithFieldItem(null, oldWorkItemData.Fields[f.ReferenceName]);
+                            newWorkItem.Fields[f.ReferenceName].Value = oldWorkItemData.Fields[f.ReferenceName].Value;
+                            break;
+                        default:
+                            newWorkItem.Fields[f.ReferenceName].Value = oldWorkItem.Fields[f.ReferenceName].Value;
+                            break;
+                    }
+
+                } 
             }
 
             if (_nodeStructureEnricher.Options.Enabled)
             {
+
                 newWorkItem.AreaPath = _nodeStructureEnricher.GetNewNodeName(oldWorkItem.AreaPath, TfsNodeStructureType.Area);
                 newWorkItem.IterationPath = _nodeStructureEnricher.GetNewNodeName(oldWorkItem.IterationPath, TfsNodeStructureType.Iteration);
+            }
+            else
+            {
+                Log.LogWarning("WorkItemMigrationContext::PopulateWorkItem::nodeStructureEnricher::Disabled! This needs to be set to true!");
             }
 
             switch (destType)
@@ -511,9 +563,9 @@ namespace VstsSyncMigrator.Engine
                     TraceWriteLine(LogEventLevel.Information, "Work Item has {sourceWorkItemRev} revisions and revision migration is set to {ReplayRevisions}",
                         new Dictionary<string, object>(){
                             { "sourceWorkItemRev", sourceWorkItem.Rev },
-                            { "ReplayRevisions", _config.ReplayRevisions }}
+                            { "ReplayRevisions", _revisionManager.Options.ReplayRevisions }}
                         );
-                    List<RevisionItem> revisionsToMigrate = _revisionManager.GetRevisionsToMigrate(sourceWorkItem, targetWorkItem);
+                    List<RevisionItem> revisionsToMigrate = _revisionManager.GetRevisionsToMigrate(sourceWorkItem.Revisions.Values.ToList(), targetWorkItem?.Revisions.Values.ToList());
                     if (targetWorkItem == null)
                     {
                         targetWorkItem = ReplayRevisions(revisionsToMigrate, sourceWorkItem, null);
@@ -617,19 +669,19 @@ namespace VstsSyncMigrator.Engine
 
         private void ProcessWorkItemAttachments(WorkItemData sourceWorkItem, WorkItemData targetWorkItem, bool save = true)
         {
-            if (targetWorkItem != null && _config.AttachmentMigration && sourceWorkItem.ToWorkItem().Attachments.Count > 0)
+            if (targetWorkItem != null && _attachmentEnricher.Options.Enabled && sourceWorkItem.ToWorkItem().Attachments.Count > 0)
             {
-                TraceWriteLine(LogEventLevel.Information, "Attachemnts {SourceWorkItemAttachmentCount} | LinkMigrator:{AttachmentMigration}", new Dictionary<string, object>() { { "SourceWorkItemAttachmentCount", sourceWorkItem.ToWorkItem().Attachments.Count }, { "AttachmentMigration", _config.AttachmentMigration } });
-                attachmentEnricher.ProcessAttachemnts(sourceWorkItem, targetWorkItem, save);
+                TraceWriteLine(LogEventLevel.Information, "Attachemnts {SourceWorkItemAttachmentCount} | LinkMigrator:{AttachmentMigration}", new Dictionary<string, object>() { { "SourceWorkItemAttachmentCount", sourceWorkItem.ToWorkItem().Attachments.Count }, { "AttachmentMigration", _attachmentEnricher.Options.Enabled } });
+                _attachmentEnricher.ProcessAttachemnts(sourceWorkItem, targetWorkItem, save);
                 AddMetric("Attachments", processWorkItemMetrics, targetWorkItem.ToWorkItem().AttachedFileCount);
             }
         }
 
         private void ProcessWorkItemLinks(IWorkItemMigrationClient sourceStore, IWorkItemMigrationClient targetStore, WorkItemData sourceWorkItem, WorkItemData targetWorkItem)
         {
-            if (targetWorkItem != null && _config.LinkMigration && sourceWorkItem.ToWorkItem().Links.Count > 0)
+            if (targetWorkItem != null && _workItemLinkEnricher.Options.Enabled && sourceWorkItem.ToWorkItem().Links.Count > 0)
             {
-                TraceWriteLine(LogEventLevel.Information, "Links {SourceWorkItemLinkCount} | LinkMigrator:{LinkMigration}", new Dictionary<string, object>() { { "SourceWorkItemLinkCount", sourceWorkItem.ToWorkItem().Links.Count }, { "LinkMigration", _config.LinkMigration } });
+                TraceWriteLine(LogEventLevel.Information, "Links {SourceWorkItemLinkCount} | LinkMigrator:{LinkMigration}", new Dictionary<string, object>() { { "SourceWorkItemLinkCount", sourceWorkItem.ToWorkItem().Links.Count }, { "LinkMigration", _workItemLinkEnricher.Options.Enabled } });
                 _workItemLinkEnricher.Enrich(sourceWorkItem, targetWorkItem);
                 AddMetric("RelatedLinkCount", processWorkItemMetrics, targetWorkItem.ToWorkItem().Links.Count);
                 int fixedLinkCount = gitRepositoryEnricher.Enrich(sourceWorkItem, targetWorkItem);
@@ -649,7 +701,6 @@ namespace VstsSyncMigrator.Engine
                 //If work item hasn't been created yet, create a shell
                 if (targetWorkItem == null)
                 {
-                    var skipToFinalRevisedWorkItemType = _config.SkipToFinalRevisedWorkItemType;
                     var finalDestType = revisionsToMigrate.Last().Type;
                     var targetType = revisionsToMigrate.First().Type;
 
@@ -658,16 +709,11 @@ namespace VstsSyncMigrator.Engine
                         TraceWriteLine(LogEventLevel.Information, $"WorkItem has changed type at one of the revisions, from {targetType} to {finalDestType}");
                     }
 
-                    if (skipToFinalRevisedWorkItemType)
-                    {
-                        targetType = finalDestType;
-                    }
-
                     if (Engine.TypeDefinitionMaps.Items.ContainsKey(targetType))
                     {
                         targetType = Engine.TypeDefinitionMaps.Items[targetType].Map();
                     }
-                    targetWorkItem = CreateWorkItem_Shell(Engine.Target.WorkItems.Project, sourceWorkItem, skipToFinalRevisedWorkItemType ? finalDestType : targetType);
+                    targetWorkItem = CreateWorkItem_Shell(Engine.Target.WorkItems.Project, sourceWorkItem, targetType);
                 }
 
                 if (_config.AttachRevisionHistory)
@@ -691,8 +737,10 @@ namespace VstsSyncMigrator.Engine
                         destType = Engine.TypeDefinitionMaps.Items[destType].Map();
                     }
                     bool typeChange = (destType != targetWorkItem.Type);
-                    
-                    if (typeChange)
+
+                    int workItemId = Int32.Parse(targetWorkItem.Id);
+
+                    if (typeChange && workItemId > 0)
                     {
                         ValidatePatTokenRequirement();
                         Uri collectionUri = Engine.Target.Config.AsTeamProjectConfig().Collection;
@@ -700,7 +748,7 @@ namespace VstsSyncMigrator.Engine
                         VssConnection connection = new VssConnection(collectionUri, new VssBasicCredential(string.Empty, token));
                         WorkItemTrackingHttpClient workItemTrackingClient = connection.GetClient<WorkItemTrackingHttpClient>();
                         JsonPatchDocument patchDocument = new JsonPatchDocument();
-                        DateTime changedDate = ((DateTime) currentRevisionWorkItem.Fields["System.ChangedDate"].Value).AddMilliseconds(-3);
+                        DateTime changedDate = ((DateTime)currentRevisionWorkItem.Fields["System.ChangedDate"].Value).AddMilliseconds(-3);
 
                         patchDocument.Add(
                             new JsonPatchOperation()
@@ -734,9 +782,16 @@ namespace VstsSyncMigrator.Engine
                                 Value = changedDate
                             }
                         );
-                        int id = Int32.Parse(targetWorkItem.Id);
-                        var result = workItemTrackingClient.UpdateWorkItemAsync(patchDocument, id, bypassRules:true).Result;
-                        targetWorkItem = Engine.Target.WorkItems.GetWorkItem(id);
+                        patchDocument.Add(
+                        new JsonPatchOperation()
+                        {
+                            Operation = Operation.Add,
+                            Path = "/fields/System.ChangedBy",
+                            Value = currentRevisionWorkItem.Fields["System.ChangedBy"].Value.ToString()
+                        }
+                        );
+                        var result = workItemTrackingClient.UpdateWorkItemAsync(patchDocument, workItemId, bypassRules: true).Result;
+                        targetWorkItem = Engine.Target.WorkItems.GetWorkItem(workItemId);
                     }
                     PopulateWorkItem(currentRevisionWorkItem, targetWorkItem, destType);
 
@@ -748,7 +803,8 @@ namespace VstsSyncMigrator.Engine
                             if (f.AllowedValues.Count > 0)
                             {
                                 targetWorkItem.ToWorkItem().Fields[f.Name].Value = f.AllowedValues[0];
-                            } else if (f.FieldDefinition.AllowedValues.Count > 0)
+                            }
+                            else if (f.FieldDefinition.AllowedValues.Count > 0)
                             {
                                 targetWorkItem.ToWorkItem().Fields[f.Name].Value = f.FieldDefinition.AllowedValues[0];
                             }
@@ -782,8 +838,11 @@ namespace VstsSyncMigrator.Engine
                     var skipIterationRevision = SkipRevisionWithInvalidIterationPath(targetWorkItem);
                     var skipAreaRevision = SkipRevisionWithInvalidAreaPath(targetWorkItem);
 
+                    CheckClosedDateIsValid(sourceWorkItem, targetWorkItem);
+
                     if (!skipIterationRevision && !skipAreaRevision)
                     {
+
                         targetWorkItem.SaveToAzureDevOps();
                     }
                     TraceWriteLine(LogEventLevel.Information,
@@ -818,7 +877,7 @@ namespace VstsSyncMigrator.Engine
                     }
                     targetWorkItem.SaveToAzureDevOps();
 
-                    attachmentEnricher.CleanUpAfterSave();
+                    _attachmentEnricher.CleanUpAfterSave();
                     TraceWriteLine(LogEventLevel.Information, "...Saved as {TargetWorkItemId}", new Dictionary<string, object> { { "TargetWorkItemId", targetWorkItem.Id } });
                 }
             }
@@ -842,6 +901,41 @@ namespace VstsSyncMigrator.Engine
             }
 
             return targetWorkItem;
+        }
+
+        private void CheckClosedDateIsValid(WorkItemData sourceWorkItem, WorkItemData targetWorkItem)
+        {
+            var closedDateField = "System.ClosedDate";
+            if (targetWorkItem.ToWorkItem().Fields.Contains("Microsoft.VSTS.Common.ClosedDate")) {
+                closedDateField = "Microsoft.VSTS.Common.ClosedDate";
+            }
+            Log.LogDebug("CheckClosedDateIsValid::ClosedDate field is {closedDateField}", closedDateField);
+            if (targetWorkItem.ToWorkItem().Fields[closedDateField].Value == null && (targetWorkItem.ToWorkItem().Fields["System.State"].Value.ToString() == "Closed" || targetWorkItem.ToWorkItem().Fields["System.State"].Value.ToString() == "Done"))
+            {
+                Log.LogWarning("The field {closedDateField} is set to Null and will revert to the current date on save! ", closedDateField);
+                Log.LogWarning("Source Closed Date [#{sourceId}][Rev{sourceRev}]: {sourceClosedDate} ", sourceWorkItem.ToWorkItem().Id, sourceWorkItem.ToWorkItem().Rev, sourceWorkItem.ToWorkItem().Fields[closedDateField].Value);            
+            }
+            if (!sourceWorkItem.ToWorkItem().Fields.Contains(closedDateField))
+            {
+                Log.LogWarning("The ClosedDate field {closedDateField} on the Target does not exist in the source! You can fix this with a mapping!", closedDateField);
+                if (sourceWorkItem.ToWorkItem().Fields.Contains("Microsoft.VSTS.Common.ClosedDate"))
+                {
+                    Log.LogWarning("Source ClosedDate Field: ", "Microsoft.VSTS.Common.ClosedDate");
+                }
+                if (sourceWorkItem.ToWorkItem().Fields.Contains("System.ClosedDate"))
+                {
+                    Log.LogWarning("Source ClosedDate Field: ", "System.ClosedDate");
+                }
+                if (targetWorkItem.ToWorkItem().Fields.Contains("Microsoft.VSTS.Common.ClosedDate"))
+                {
+                    Log.LogWarning("Target ClosedDate Field: ", "Microsoft.VSTS.Common.ClosedDate");
+                }
+                if (targetWorkItem.ToWorkItem().Fields.Contains("System.ClosedDate"))
+                {
+                    Log.LogWarning("Target ClosedDate Field: ", "System.ClosedDate");
+                }
+            }
+
         }
 
         private bool SkipRevisionWithInvalidIterationPath(WorkItemData targetWorkItemData)

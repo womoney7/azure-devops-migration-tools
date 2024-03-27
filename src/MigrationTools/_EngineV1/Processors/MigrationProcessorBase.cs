@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MigrationTools._EngineV1.Configuration;
+using MigrationTools.Enrichers;
 using MigrationTools.Processors;
 
 namespace MigrationTools._EngineV1.Processors
@@ -83,6 +86,34 @@ namespace MigrationTools._EngineV1.Processors
         {
             if (!store.ContainsKey(name)) store.Add(name, value);
         }
+
+        protected void PullCommonEnrichersConfig<TEnricher, TEnricherOptions> (List<IProcessorEnricherOptions> commonEnrichersStore , TEnricher commonEnricher)
+            where TEnricherOptions : IProcessorEnricherOptions, new()
+            where TEnricher : IProcessorEnricher
+        {
+            TEnricherOptions config = default(TEnricherOptions);
+            if (commonEnricher == null)
+            {
+                commonEnricher= Services.GetService<TEnricher>();
+            }
+            if (commonEnrichersStore != null)
+            {
+                config = commonEnrichersStore.OfType<TEnricherOptions>().FirstOrDefault();
+            }
+            if (config == null)
+            {
+                var result = new TEnricherOptions();
+                result.SetDefaults();
+                commonEnricher.Configure(result);
+                Log.LogInformation("Using `{TEnricherOptions}` with Defaults... add a `{TEnricherOptions}` entry to `CommonEnrichersConfig` to customise the settings.", typeof(TEnricherOptions).Name);
+            }
+            else
+            {
+                Log.LogInformation("Using `{TEnricherOptions}` from `CommonEnrichersConfig`", typeof(TEnricherOptions).Name);
+                commonEnricher.Configure(config);
+            }
+        }
+      
 
         protected abstract void InternalExecute();
     }
