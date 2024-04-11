@@ -410,6 +410,10 @@ namespace VstsSyncMigrator.Engine
                 newwit.Fields["System.CreatedDate"].Value = currentRevisionWorkItem.ToWorkItem().Revisions[0].Fields["System.CreatedDate"].Value;
                 workItemLog.Debug("Setting 'System.CreatedDate'={SystemCreatedDate}", currentRevisionWorkItem.ToWorkItem().Revisions[0].Fields["System.CreatedDate"].Value);
             }
+
+            newwit.Title = currentRevisionWorkItem?.Title;
+            newwit[CoreField.ChangedDate] = currentRevisionWorkItem?.ChangedDate;
+            
             return newwit.AsWorkItemData();
         }
 
@@ -595,7 +599,7 @@ namespace VstsSyncMigrator.Engine
                             AddMetric("SyncRev", processWorkItemMetrics, revisionsToMigrate.Count);
                         }
                     }
-                    AddParameter("TargetWorkItem", processWorkItemParamiters, targetWorkItem.ToWorkItem().Revisions.Count.ToString());
+                    AddParameter("TargetWorkItem", processWorkItemParamiters, targetWorkItem.ToWorkItem().Revisions?.Count.ToString());
 
                     if (targetWorkItem != null && targetWorkItem.ToWorkItem().IsDirty)
                     {

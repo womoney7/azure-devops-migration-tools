@@ -1,5 +1,7 @@
 ﻿using System;
+
 using Microsoft.Extensions.Logging;
+
 using MigrationTools.Endpoints;
 using MigrationTools.Enrichers;
 
@@ -40,12 +42,14 @@ namespace MigrationTools.Processors
             EnsureConfigured();
             ProcessorEnrichers.ProcessorExecutionBegin(this);
             var nodeStructurOptions = new TfsNodeStructureOptions()
-                                        {
-                                            Enabled = true,
-                                            NodeBasePaths = _options.NodeBasePaths,
-                                            AreaMaps = _options.AreaMaps,
-                                            IterationMaps = _options.IterationMaps,
-                                        };
+            {
+                Enabled = true,
+                NodeBasePaths = _options.NodeBasePaths,
+                AreaMaps = _options.AreaMaps,
+                IterationMaps = _options.IterationMaps,
+                ShouldCreateMissingRevisionPaths = _options.ShouldCreateMissingRevisionPaths,
+                ReplicateAllExistingNodes = _options.ReplicateAllExistingNodes
+            };
             _nodeStructureEnricher.Configure(nodeStructurOptions);
             _nodeStructureEnricher.ProcessorExecutionBegin(null);
             ProcessorEnrichers.ProcessorExecutionEnd(this);

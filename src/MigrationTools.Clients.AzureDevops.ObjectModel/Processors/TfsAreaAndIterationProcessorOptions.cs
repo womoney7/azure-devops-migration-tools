@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+
 using MigrationTools.Enrichers;
 
 namespace MigrationTools.Processors
@@ -10,6 +11,14 @@ namespace MigrationTools.Processors
         public string[] NodeBasePaths { get; set; }
         public Dictionary<string, string> AreaMaps { get; set; }
         public Dictionary<string, string> IterationMaps { get; set; }
+
+
+        /// <summary>
+        /// When set to True the susyem will try to create any missing missing area or iteration paths from the revisions.
+        /// </summary>
+        public bool ShouldCreateMissingRevisionPaths { get; set; }
+
+        public bool ReplicateAllExistingNodes { get; set; }
 
         public override Type ToConfigure => typeof(TfsAreaAndIterationProcessor);
 
