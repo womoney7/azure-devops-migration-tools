@@ -4,6 +4,7 @@ using System.Net;
 using Microsoft.ApplicationInsights.DataContracts;
 using Microsoft.TeamFoundation.Client;
 using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.WebApi;
 using MigrationTools._EngineV1.Configuration;
 using MigrationTools.Endpoints;
 using Serilog;
@@ -166,7 +167,15 @@ namespace MigrationTools._EngineV1.Clients
                        new Dictionary<string, double> {
                             { "Time",timer.ElapsedMilliseconds }
                        });
-                Log.Error(ex, "Unable to configure store: Check persmissions and credentials for {AuthenticationMode}", _config.AuthenticationMode);
+                Log.Error(ex, "Unable to configure store: Check persmissions and credentials for {AuthenticationMode}!", _config.AuthenticationMode);
+                switch (_config.AuthenticationMode)
+                {
+                    case AuthenticationMode.AccessToken:
+                        Log.Error("The PAT MUST be 'full access' for it to work with the Object Model API.");
+                        break;
+                    default:
+                        break;
+                }
                 Environment.Exit(-1);
             }
             return y;
@@ -176,6 +185,12 @@ namespace MigrationTools._EngineV1.Clients
         {
             EnsureCollection();
             return _collection.GetService<T>();
+        }
+
+        public T GetClient<T>() where T : IVssHttpClient
+        {
+            EnsureCollection();
+            return _collection.GetClient<T>();
         }
     }
 }

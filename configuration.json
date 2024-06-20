@@ -4,7 +4,7 @@
     "$type": "TfsTeamProjectConfig",
     "Collection": "https://dev.azure.com/nkdagility-preview/",
     "Project": "migrationSource1",
-    "ReflectedWorkItemIDFieldName": "nkdScrum.ReflectedWorkItemId",
+    "ReflectedWorkItemIDFieldName": "Custom.ReflectedWorkItemId",
     "AllowCrossProjectLinking": false,
     "AuthenticationMode": "AccessToken",
     "PersonalAccessToken": "",
@@ -34,7 +34,8 @@
   "CommonEnrichersConfig": [
     {
       "$type": "TfsNodeStructureOptions",
-      "Enabled": false,
+      "RefName": "TfsNodeStructure",
+      "Enabled": true,
       "NodeBasePaths": [],
       "AreaMaps": {
         "^migrationSource1([\\\\]?.*)$": "MigrationTest5$1",
@@ -50,25 +51,37 @@
       "ReplicateAllExistingNodes": true
     },
     {
+      "$type": "TfsTeamSettingsEnricherOptions",
+      "Enabled": true,
+      "MigrateTeamSettings": true,
+      "UpdateTeamSettings": true,
+      "MigrateTeamCapacities": true,
+      "Teams": null
+    },
+    {
       "$type": "TfsWorkItemLinkEnricherOptions",
+      "RefName": "TfsWorkItemLinkEnricher",
       "Enabled": true,
       "FilterIfLinkCountMatches": true,
       "SaveAfterEachLinkIsAdded": false
     },
     {
       "$type": "TfsRevisionManagerOptions",
+      "RefName": "TfsRevisionManager",
       "Enabled": true,
       "ReplayRevisions": true,
       "MaxRevisions": 0
     },
     {
       "$type": "TfsAttachmentEnricherOptions",
+      "RefName": "TfsAttachmentEnricher",
       "Enabled": true,
       "ExportBasePath": "c:\\temp\\WorkItemAttachmentExport",
       "MaxRevisions": 480000000
     },
     {
       "$type": "StringManipulatorEnricherOptions",
+      "RefName": "StringManipulator",
       "Enabled": true,
       "MaxStringLength": 1000000,
       "Manipulators": [
@@ -83,6 +96,7 @@
     },
     {
       "$type": "TfsUserMappingEnricherOptions",
+      "RefName": "TfsUserMappingEnricher",
       "Enabled": true,
       "UserMappingFile": "C:\\temp\\userExport.json",
       "IdentityFieldsToCheck": [
@@ -98,10 +112,10 @@
   "Processors": [
     {
       "$type": "WorkItemMigrationConfig",
-      "Enabled": true,
+      "Enabled": false,
       "UpdateCreatedDate": true,
       "UpdateCreatedBy": true,
-      "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.Id] =137 AND [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Program', 'Portfolio', 'Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
+      "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
       "FixHtmlAttachmentLinks": false,
       "WorkItemCreateRetryLimit": 5,
       "FilterWorkItemsThatAlreadyExistInTarget": false,
@@ -114,9 +128,17 @@
       "SkipRevisionWithInvalidAreaPath": false
     },
     {
+      "$type": "WorkItemPostProcessingConfig",
+      "Enabled": true,
+      "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
+      "WorkItemCreateRetryLimit": 5,
+      "FilterWorkItemsThatAlreadyExistInTarget": false,
+      "PauseAfterEachWorkItem": false
+    },
+    {
       "$type": "ExportUsersForMappingConfig",
       "Enabled": false,
-      "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Program', 'Portfolio', 'Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
+      "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
       "OnlyListUsersInWorkItems": true
     }
   ],

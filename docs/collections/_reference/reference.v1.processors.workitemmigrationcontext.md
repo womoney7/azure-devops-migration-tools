@@ -11,7 +11,7 @@ configurationSamples:
       "UpdateCreatedDate": true,
       "UpdateCreatedBy": true,
       "WIQLQuery": "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @TeamProject AND [System.WorkItemType] NOT IN ('Test Suite', 'Test Plan','Shared Steps','Shared Parameter','Feedback Request') ORDER BY [System.ChangedDate] desc",
-      "FixHtmlAttachmentLinks": false,
+      "FixHtmlAttachmentLinks": true,
       "WorkItemCreateRetryLimit": 5,
       "FilterWorkItemsThatAlreadyExistInTarget": false,
       "PauseAfterEachWorkItem": false,
@@ -241,7 +241,7 @@ topics:
 - topic: introduction
   path: /docs/Reference/v1/Processors/WorkItemMigrationContext-introduction.md
   exists: true
-  markdown: >
+  markdown: >+
     The `WorkItemMigrationContext` processor is used for migrating work items from one Azure DevOps instance to another. This encompasses a variety of activities:
 
 

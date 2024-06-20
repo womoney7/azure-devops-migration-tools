@@ -78,6 +78,26 @@ The tools will be installed to `C:\Tools\MigrationTools\` which should be added 
 
 You can download the [latest release](https://github.com/nkdAgility/azure-devops-migration-tools/releases/latest) and unzip it to a folder of your choice.
 
+## Minimum Permission Requirements
+
+At this time the documented minimum required permissions for running the tools are:
+
+- Account in both the source and target projects with "Project Collection Administrator" rights
+- PAT with "full access" for both the Source and the Target
+
+Note: I have been informed by the Azure DevOps product team information that ObjectModel API only works with full scoped PATs, so it won't work with any PAT that has specific scopes. 
+
+### Advanced Unsupported Permission Options
+
+We have seen that the tools may work with less permissions however the following has not been full tested and is not currently supported:
+
+- Project and Team (Read, write, & manage)
+- Work Items (Read, Write & Manage)
+- Identity (Read & Manage)
+- Security (Manage)
+
+If you do try this out then please let us know how you get on!
+
 ## Advanced tools
 
 There are additional advanced tooling available on [Azure DevOps Automation Tools](https://github.com/nkdAgility/azure-devops-automation-tools). These are a collection of Powershell scripts that can be used to;
